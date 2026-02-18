@@ -1,0 +1,44 @@
+---
+- name: User | Fetch Existing Users
+  ansible.builtin.uri:
+    url: "https://{{ ansible_host }}/api/v2.0/user"
+    method: GET
+    body: {}
+  register: existing_users
+
+- name: User | Create Service Users
+  ansible.builtin.uri:
+    url: "https://{{ ansible_host }}/api/v2.0/user"
+    method: POST
+    body: >
+      {
+        "username": "{{ item.name }}",
+        "uid": {{ item.uid | int }},
+        "group": {{ (existing_groups.json | selectattr('group', 'equalto', item.group) | first).id }},
+        "full_name": "{{ item.comment }}",
+        "password_disabled": true,
+        "smb": false,
+        "locked": false,
+        "shell": "/usr/sbin/nologin"
+      }
+    loop: "{{ service_users }}"
+    when: "item.name not in (existing_users.json | map(attribute='username') | list)"
+
+- name: Group | Fetch Existing Groups
+  ansible.builtin.uri:
+    url: "https://{{ ansible_host }}/api/v2.0/group"
+    method: GET
+    body: {}
+  register: existing_groups
+
+- name: Group | Create Service Groups
+  ansible.builtin.uri:
+    url: "https://{{ ansible_host }}/api/v2.0/group"
+    method: POST
+    body: >
+      {
+        "name": "{{ item.name }}",
+        "gid": {{ item.gid | int }}
+      }
+    loop: "{{ service_groups }}"
+    when: "item.name not in (existing_groups.json | map(attribute='group') | list)"

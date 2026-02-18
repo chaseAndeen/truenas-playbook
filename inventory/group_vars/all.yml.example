@@ -1,0 +1,85 @@
+---
+# ==========================================================
+# AWS SSM SECRET LOOKUPS
+# ==========================================================
+
+# --- Core API & System ---
+truenas_api_key: "{{ lookup('amazon.aws.aws_ssm', '/truenas/api/key', profile='ansible-ssm-reader') }}"
+zfs_encryption_key: "{{ lookup('amazon.aws.aws_ssm', '/truenas/zfs/encryption_key', profile='ansible-ssm-reader') }}"
+
+# --- S3 & Cloud Sync ---
+aws_access_key: "{{ lookup('amazon.aws.aws_ssm', '/truenas/s3/access_key', profile='ansible-ssm-reader') }}"
+aws_secret_key: "{{ lookup('amazon.aws.aws_ssm', '/truenas/s3/secret_key', profile='ansible-ssm-reader') }}"
+cloudsync_password: "{{ lookup('amazon.aws.aws_ssm', '/truenas/s3/cloudsync_password', profile='ansible-ssm-reader') }}"
+cloudsync_salt: "{{ lookup('amazon.aws.aws_ssm', '/truenas/s3/cloudsync_salt', profile='ansible-ssm-reader') }}"
+
+# --- Networking & Alerts ---
+cloudflare_api_token: "{{ lookup('amazon.aws.aws_ssm', '/truenas/cloudflare/api_token', profile='ansible-ssm-reader') }}"
+cloudflare_zone_id: "{{ lookup('amazon.aws.aws_ssm', '/truenas/cloudflare/zone_id', profile='ansible-ssm-reader') }}"
+smtp_user: "{{ lookup('amazon.aws.aws_ssm', '/truenas/smtp/user', profile='ansible-ssm-reader') }}"
+smtp_pass: "{{ lookup('amazon.aws.aws_ssm', '/truenas/smtp/pass', profile='ansible-ssm-reader') }}"
+
+# S3 Bucket Details
+s3_bucket_name: "my-bucket"
+s3_region: "us-east-1"
+s3_endpoint: "s3.amazonaws.com"
+
+# Storage Strategy
+aws_s3_storage_class: "DEEP_ARCHIVE"
+aws_s3_versioning_enabled: true
+
+# System Settings
+truenas_hostname: "datavault"
+truenas_user: "user"
+truenas_domain: "home.arpa"
+trusted_networks:
+  - "192.168.1.0/24"
+  - "10.0.0.0/24"
+server_networks:
+  - "172.16.0.0/24"
+
+# SSL
+acme_dnstype: "cloudflare"
+csr_name: "datavault-csr"
+ssl_cert_name: "datavault-ssl"
+
+ssl_key_type: "EC"
+ec_curve: "SECP256R1"
+digest_algorithm: "SHA256"
+ssl_common: "datavault.example.com"
+ssl_san: "datavault.example.com"
+
+
+# EMAIL Alerts
+smtp_server: "email-smtp.us-east-1.amazonaws.com"
+smtp_port: 587
+smtp_security: "TLS"
+from_email: "alerts@example.com"
+alert_email: "admin@example.com"
+
+# Storage Pool (RAID 10)
+pool_name: "vault"
+vdev_mirror_1: [ "sda", "sdb" ]
+vdev_mirror_2: [ "sdc", "sdd" ]
+
+# Datasets
+datasets:
+  - { name: "cameras", recordsize: "1M", quota: "2TB", owner: "nvr_user", group: "camera_group", share_type: "nfs", nfs_map: "mapall" }
+  - { name: "home", recordsize: "128K", owner: "{{ truenas_user }}", group: "{{ truenas_user }}", share_type: "smb" }
+  - { name: "proxmox_backups", recordsize: "128K", quota: "5TB", owner: "pbs_user", group: "proxmox_group", share_type: "nfs", nfs_map: "maproot" }
+  - { name: "docker_data", recordsize: "16K", owner: "docker_user", group: "docker_group", share_type: "nfs", nfs_map: "maproot" }
+  - { name: "amp_backups", recordsize: "128K", owner: "amp_user", group: "amp_group", share_type: "nfs", nfs_map: "mapall" }
+
+# Users & Groups
+service_groups:
+  - { name: "proxmox_group", gid: 2000 }
+  - { name: "docker_group", gid: 2001 }
+  - { name: "camera_group", gid: 2002 }
+  - { name: 'amp_group', gid: 2003 }
+
+service_users:
+  - { name: "pbs_user", uid: 2000, group: "proxmox_group", comment: "Proxmox Backup Server" }
+  - { name: "docker_user", uid: 2001, group: "docker_group", comment: "Docker Network Storage" }
+  - { name: "nvr_user", uid: 2002, group: "camera_group", comment: "Camera NVR Account" }
+  - { name: 'amp_user', uid: 2003, group: 'amp_group', comment: 'AMP Game Server Backups' }
+  

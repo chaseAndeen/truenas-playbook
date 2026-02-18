@@ -1,0 +1,56 @@
+---
+- name: Update TrueNAS
+  hosts: datavault
+  gather_facts: true
+  module_defaults:
+    ansible.builtin.uri:
+      validate_certs: false
+      headers:
+        Authorization: "Bearer {{ truenas_api_key }}"
+      body_format: json
+
+  tasks:
+    - name: Update | Check for TrueNAS SCALE Updates
+      ansible.builtin.uri:
+        url: "https://{{ ansible_host }}/api/v2.0/update/check_available"
+        method: POST
+      register: update_check
+
+    - name: Update | Download Available Updates
+      ansible.builtin.uri:
+        url: "https://{{ ansible_host }}/api/v2.0/update/download"
+        method: GET
+      register: download_job
+      when: update_check.json.status == "AVAILABLE"
+
+    - name: Update | Apply Updates and Initiate Reboot
+      ansible.builtin.uri:
+        url: "https://{{ ansible_host }}/api/v2.0/update/update"
+        method: POST
+        body:
+          reboot: true
+      when: 
+        - update_check.json.status == "AVAILABLE"
+        - confirm_update | default(false) | bool
+      register: update_run
+
+    - name: Update | Monitor Update Job Progress
+      ansible.builtin.uri:
+        url: "https://{{ ansible_host }}/api/v2.0/core/get_jobs"
+        method: GET
+        body:
+          - [["id", "=", "{{ update_run.json }}"]]
+      register: job_status
+      until: job_status.json[0].state == 'SUCCESS'
+      retries: 30
+      delay: 10
+      when: update_run.json is defined
+
+    - name: Update | Wait for System to Return Online
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: 443
+        delay: 60
+        timeout: 900
+        state: started
+      when: update_run.json is defined

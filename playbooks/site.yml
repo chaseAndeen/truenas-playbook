@@ -1,0 +1,17 @@
+---
+- name: Provision TrueNAS DataVault
+  hosts: datavault
+  gather_facts: true
+  module_defaults:
+    ansible.builtin.uri:
+      validate_certs: false
+      headers:
+        Authorization: "Bearer {{ truenas_api_key }}"
+      body_format: json
+
+
+  roles:
+  - role: system_base
+  - role: identity_managment
+  - role: storage_provisioning
+  - role: system_hardening

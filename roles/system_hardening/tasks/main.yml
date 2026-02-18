@@ -1,0 +1,37 @@
+---
+- name: User | Lookup truenas_admin User ID
+  ansible.builtin.uri:
+    url: "https://{{ ansible_host }}/api/v2.0/user?username=truenas_admin"
+    method: GET
+  register: admin_user_lookup
+
+- name: User | Disable Password and Lock Account
+  ansible.builtin.uri:
+    url: "https://{{ ansible_host }}/api/v2.0/user/id/{{ admin_user_lookup.json[0].id }}"
+    method: PUT
+    body:
+      password_disabled: true
+      locked: true
+  when: 
+    - admin_user_lookup.json | length > 0
+    - (admin_user_lookup.json[0].locked == false) or (admin_user_lookup.json[0].password_disabled == false)
+
+- name: SMB | Get Current SMB Service Config
+  ansible.builtin.uri:
+    url: "https://{{ ansible_host }}/api/v2.0/smb"
+    method: GET
+  register: current_smb_config
+
+- name: SMB | Hardening - Restrict SMB Service
+  ansible.builtin.uri:
+    url: "https://{{ ansible_host }}/api/v2.0/smb"
+    method: PUT
+    body:
+      smb_options: |
+        hosts allow = {{ trusted_networks | join(' ') }} localhost
+        hosts deny = ALL
+  vars:
+    desired_smb_options: |
+      hosts allow = {{ trusted_networks | join(' ') }} localhost
+      hosts deny = ALL
+  when: current_smb_config.json.smb_options != desired_smb_options
