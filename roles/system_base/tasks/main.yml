@@ -206,9 +206,8 @@
   ansible.builtin.uri:
     url: "https://{{ ansible_host }}/api/v2.0/system/general/ui_restart"
     method: POST
-  when: >
-    (ssl_trigger is changed) or 
-    (system_update is changed)
+    body: {}
+  when: ssl_trigger is changed or system_update is changed
   async: 30
   poll: 0
 
