@@ -333,7 +333,7 @@
           "bucket": "{{ s3_bucket_name }}",
           "folder": "",
           "region": "{{ s3_region }}",
-          "storage_class": "STANDARD"
+          "storage_class": "{{ aws_s3_storage_class }}
         },
         "schedule": {
           "minute": "0",
