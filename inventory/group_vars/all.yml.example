@@ -40,8 +40,8 @@ aws_s3_versioning_enabled: true
 # ==========================================================
 # System Settings
 # ==========================================================
-truenas_hostname: "your-nas-hostname"        # TrueNAS hostname
-truenas_user: "sysop"                        # TrueNAS admin username
+truenas_hostname: "your-nas-hostname"       # TrueNAS hostname
+truenas_user: "user"                        # TrueNAS admin username
 truenas_domain: "example.com"               # your internal domain
 
 trusted_networks:
@@ -67,8 +67,8 @@ ssl_san: "nas.example.com"
 # ==========================================================
 # Email Alerts
 # ==========================================================
-smtp_server: "email-smtp.us-east-1.amazonaws.com"
-smtp_port: 587
+smtp_server: "example.smtp.com"
+smtp_port: 1234
 smtp_security: "TLS"
 from_email: "alerts@example.com"
 alert_email: "admin@example.com"
