@@ -1,85 +1,97 @@
 ---
 # ==========================================================
+# AWS SSO / IAM Configuration
+# ==========================================================
+aws_profile: "YourSSOProfile"               # your AWS SSO profile name
+aws_region: "us-east-1"
+
+# ==========================================================
 # AWS SSM SECRET LOOKUPS
 # ==========================================================
 
 # --- Core API & System ---
-truenas_api_key: "{{ lookup('amazon.aws.aws_ssm', '/truenas/api/key', profile='ansible-ssm-reader') }}"
-zfs_encryption_key: "{{ lookup('amazon.aws.aws_ssm', '/truenas/zfs/encryption_key', profile='ansible-ssm-reader') }}"
+truenas_api_key:    "{{ lookup('amazon.aws.ssm_parameter', '/storage/truenas/api_key',                       profile=aws_profile, region=aws_region) }}"
+zfs_encryption_key: "{{ lookup('amazon.aws.ssm_parameter', '/storage/truenas/zfs_key',                      profile=aws_profile, region=aws_region) }}"
 
 # --- S3 & Cloud Sync ---
-aws_access_key: "{{ lookup('amazon.aws.aws_ssm', '/truenas/s3/access_key', profile='ansible-ssm-reader') }}"
-aws_secret_key: "{{ lookup('amazon.aws.aws_ssm', '/truenas/s3/secret_key', profile='ansible-ssm-reader') }}"
-cloudsync_password: "{{ lookup('amazon.aws.aws_ssm', '/truenas/s3/cloudsync_password', profile='ansible-ssm-reader') }}"
-cloudsync_salt: "{{ lookup('amazon.aws.aws_ssm', '/truenas/s3/cloudsync_salt', profile='ansible-ssm-reader') }}"
+aws_access_key:     "{{ lookup('amazon.aws.ssm_parameter', '/storage/truenas/backups/s3_access_key',         profile=aws_profile, region=aws_region) }}"
+aws_secret_key:     "{{ lookup('amazon.aws.ssm_parameter', '/storage/truenas/backups/s3_secret_key',         profile=aws_profile, region=aws_region) }}"
+cloudsync_password: "{{ lookup('amazon.aws.ssm_parameter', '/storage/truenas/backups/cloudsync_password',    profile=aws_profile, region=aws_region) }}"
+cloudsync_salt:     "{{ lookup('amazon.aws.ssm_parameter', '/storage/truenas/backups/cloudsync_salt',        profile=aws_profile, region=aws_region) }}"
 
-# --- Networking & Alerts ---
-cloudflare_api_token: "{{ lookup('amazon.aws.aws_ssm', '/truenas/cloudflare/api_token', profile='ansible-ssm-reader') }}"
-cloudflare_zone_id: "{{ lookup('amazon.aws.aws_ssm', '/truenas/cloudflare/zone_id', profile='ansible-ssm-reader') }}"
-smtp_user: "{{ lookup('amazon.aws.aws_ssm', '/truenas/smtp/user', profile='ansible-ssm-reader') }}"
-smtp_pass: "{{ lookup('amazon.aws.aws_ssm', '/truenas/smtp/pass', profile='ansible-ssm-reader') }}"
+# --- Cloudflare (shared with proxmox-playbook) ---
+cloudflare_api_token: "{{ lookup('amazon.aws.ssm_parameter', '/infra/common/cloudflare/api_token',          profile=aws_profile, region=aws_region) }}"
+cloudflare_zone_id:   "{{ lookup('amazon.aws.ssm_parameter', '/infra/common/cloudflare/zone_id',            profile=aws_profile, region=aws_region) }}"
 
+# --- SMTP (shared with proxmox-playbook) ---
+smtp_user: "{{ lookup('amazon.aws.ssm_parameter', '/infra/common/smtp/user', profile=aws_profile, region=aws_region) }}"
+smtp_pass: "{{ lookup('amazon.aws.ssm_parameter', '/infra/common/smtp/pass', profile=aws_profile, region=aws_region) }}"
+
+# ==========================================================
 # S3 Bucket Details
-s3_bucket_name: "my-bucket"
+# ==========================================================
+s3_bucket_name: "your-s3-bucket-name"       # your S3 bucket for cloud sync
 s3_region: "us-east-1"
 s3_endpoint: "s3.amazonaws.com"
 
-# Storage Strategy
 aws_s3_storage_class: "DEEP_ARCHIVE"
 aws_s3_versioning_enabled: true
 
+# ==========================================================
 # System Settings
-truenas_hostname: "datavault"
-truenas_user: "user"
-truenas_domain: "home.arpa"
-trusted_networks:
-  - "192.168.1.0/24"
-  - "10.0.0.0/24"
-server_networks:
-  - "172.16.0.0/24"
+# ==========================================================
+truenas_hostname: "your-nas-hostname"        # TrueNAS hostname
+truenas_user: "sysop"                        # TrueNAS admin username
+truenas_domain: "example.com"               # your internal domain
 
+trusted_networks:
+  - "192.168.x.x/24"                        # management network
+  - "10.x.x.x/24"                           # VPN management plane
+
+server_networks:
+  - "192.168.x.x/24"                        # networks allowed to mount NFS shares
+
+# ==========================================================
 # SSL
+# ==========================================================
 acme_dnstype: "cloudflare"
-csr_name: "datavault-csr"
-ssl_cert_name: "datavault-ssl"
+csr_name: "nas-csr"
+ssl_cert_name: "nas-ssl"
 
 ssl_key_type: "EC"
 ec_curve: "SECP256R1"
 digest_algorithm: "SHA256"
-ssl_common: "datavault.example.com"
-ssl_san: "datavault.example.com"
+ssl_common: "nas.example.com"               # FQDN for TLS cert
+ssl_san: "nas.example.com"
 
-
-# EMAIL Alerts
+# ==========================================================
+# Email Alerts
+# ==========================================================
 smtp_server: "email-smtp.us-east-1.amazonaws.com"
 smtp_port: 587
 smtp_security: "TLS"
 from_email: "alerts@example.com"
 alert_email: "admin@example.com"
 
+# ==========================================================
 # Storage Pool (RAID 10)
-pool_name: "vault"
-vdev_mirror_1: [ "sda", "sdb" ]
-vdev_mirror_2: [ "sdc", "sdd" ]
+# ==========================================================
+pool_name: "tank"                            # ZFS pool name
+vdev_mirror_1: ["sda", "sdb"]               # first mirror vdev
+vdev_mirror_2: ["sdc", "sdd"]               # second mirror vdev
 
+# ==========================================================
 # Datasets
+# ==========================================================
 datasets:
-  - { name: "cameras", recordsize: "1M", quota: "2TB", owner: "nvr_user", group: "camera_group", share_type: "nfs", nfs_map: "mapall" }
-  - { name: "home", recordsize: "128K", owner: "{{ truenas_user }}", group: "{{ truenas_user }}", share_type: "smb" }
-  - { name: "proxmox_backups", recordsize: "128K", quota: "5TB", owner: "pbs_user", group: "proxmox_group", share_type: "nfs", nfs_map: "maproot" }
-  - { name: "docker_data", recordsize: "16K", owner: "docker_user", group: "docker_group", share_type: "nfs", nfs_map: "maproot" }
-  - { name: "amp_backups", recordsize: "128K", owner: "amp_user", group: "amp_group", share_type: "nfs", nfs_map: "mapall" }
+  - { name: "dataset-01", recordsize: "128K", quota: "1TB", owner: "service_user", group: "service_group", share_type: "nfs", nfs_map: "maproot" }
+  - { name: "home",        recordsize: "128K",               owner: "sysop",        group: "sysop",         share_type: "smb" }
 
+# ==========================================================
 # Users & Groups
+# ==========================================================
 service_groups:
-  - { name: "proxmox_group", gid: 2000 }
-  - { name: "docker_group", gid: 2001 }
-  - { name: "camera_group", gid: 2002 }
-  - { name: 'amp_group', gid: 2003 }
+  - { name: "service_group", gid: 3000 }    # UIDs/GIDs must match NFS clients
 
 service_users:
-  - { name: "pbs_user", uid: 2000, group: "proxmox_group", comment: "Proxmox Backup Server" }
-  - { name: "docker_user", uid: 2001, group: "docker_group", comment: "Docker Network Storage" }
-  - { name: "nvr_user", uid: 2002, group: "camera_group", comment: "Camera NVR Account" }
-  - { name: 'amp_user', uid: 2003, group: 'amp_group', comment: 'AMP Game Server Backups' }
-  
+  - { name: "service_user", uid: 3000, group: "service_group", comment: "Service Account" }

@@ -215,6 +215,21 @@
   loop_control:
     label: "NFS Create: {{ item.name }}"
 
+- name: Share | Update NFS Share Networks
+  ansible.builtin.uri:
+    url: "https://{{ ansible_host }}/api/v2.0/sharing/nfs/id/{{ existing_share.id }}"
+    method: PUT
+    body:
+      networks: "{{ server_networks }}"
+  vars:
+    existing_share: "{{ nfs_list | selectattr('path', 'equalto', '/mnt/' + pool_name + '/' + item.name) | first | default({}) }}"
+  loop: "{{ datasets | selectattr('share_type', 'equalto', 'nfs') | list }}"
+  when:
+    - existing_share.id is defined
+    - (existing_share.networks | default([]) | sort) != (server_networks | sort)
+  loop_control:
+    label: "NFS Update: {{ item.name }}"
+
 - name: Service | Get service statuses (cifs and nfs)
   ansible.builtin.uri:
     url: "https://{{ ansible_host }}/api/v2.0/service?service={{ item }}"
@@ -333,7 +348,7 @@
           "bucket": "{{ s3_bucket_name }}",
           "folder": "",
           "region": "{{ s3_region }}",
-          "storage_class": "{{ aws_s3_storage_class }}
+          "storage_class": "{{ aws_s3_storage_class }}"
         },
         "schedule": {
           "minute": "0",
