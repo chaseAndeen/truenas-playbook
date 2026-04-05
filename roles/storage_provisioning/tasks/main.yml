@@ -230,6 +230,25 @@
   loop_control:
     label: "NFS Update: {{ item.name }}"
 
+- name: Share | Update NFS Share Map Settings
+  ansible.builtin.uri:
+    url: "https://{{ ansible_host }}/api/v2.0/sharing/nfs/id/{{ existing_share.id }}"
+    method: PUT
+    body:
+      mapall_user: "{{ item.owner if item.nfs_map | default('') == 'mapall' else '' }}"
+      mapall_group: "{{ item.group if item.nfs_map | default('') == 'mapall' else '' }}"
+      maproot_user: "{{ 'root' if item.nfs_map | default('') == 'maproot' else '' }}"
+      maproot_group: "{{ 'wheel' if item.nfs_map | default('') == 'maproot' else '' }}"
+  vars:
+    existing_share: "{{ nfs_list | selectattr('path', 'equalto', '/mnt/' + pool_name + '/' + item.name) | first | default({}) }}"
+    desired_mapall_user: "{{ item.owner if item.nfs_map | default('') == 'mapall' else '' }}"
+  loop: "{{ datasets | selectattr('share_type', 'equalto', 'nfs') | list }}"
+  when:
+    - existing_share.id is defined
+    - (existing_share.mapall_user | default('')) != desired_mapall_user
+  loop_control:
+    label: "NFS Map Update: {{ item.name }}"
+
 - name: Service | Get service statuses (cifs and nfs)
   ansible.builtin.uri:
     url: "https://{{ ansible_host }}/api/v2.0/service?service={{ item }}"
