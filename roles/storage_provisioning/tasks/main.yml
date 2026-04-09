@@ -116,8 +116,8 @@
     body: >
       {
         "path": "/mnt/{{ pool_name }}/{{ item.name }}",
-        "uid": {{ id_map[item.name].uid | default(truenas_user.uid) }},
-        "gid": {{ id_map[item.name].gid | default(truenas_user.uid) }},
+        "uid": {{ id_map[item.name].uid | default(truenas_admin_user.uid) }},
+        "gid": {{ id_map[item.name].gid | default(truenas_admin_user.uid) }},
         "dacl": {{ [ 
           { 
             "tag": "owner@", 
@@ -143,8 +143,8 @@
       }
   vars:
     current_stat: "{{ current_acl_results.results | selectattr('item.name', 'equalto', item.name) | first }}"
-    target_uid: "{{ id_map[item.name].uid | default(truenas_user.uid) }}"
-    target_gid: "{{ id_map[item.name].gid | default(truenas_user.uid) }}"
+    target_uid: "{{ id_map[item.name].uid | default(truenas_admin_user.uid) }}"
+    target_gid: "{{ id_map[item.name].gid | default(truenas_admin_user.uid) }}"
   loop: "{{ datasets }}"
   when: >
     current_stat.json.uid != target_uid | int or 

@@ -22,10 +22,10 @@ This playbook connects to TrueNAS using `ansible_connection: local` and drives a
 ## Prerequisites
 
 ### 1. AWS SSO Login
-All secrets are fetched from AWS SSM at runtime using the `InfraProvisioner` profile:
+All secrets are fetched from AWS SSM at runtime using the profile set in `aws_profile` (default: `InfraProvisioner`):
 
 ```bash
-aws sso login --profile InfraProvisioner
+aws sso login --profile <aws_profile>
 ```
 
 ### 2. Ansible Collections
@@ -47,25 +47,25 @@ The following parameters must exist in AWS SSM before running the playbook:
 
 | SSM Path | Description |
 |---|---|
-| `/truenas/api/key` | TrueNAS API key (SecureString) |
-| `/truenas/zfs/encryption_key` | ZFS dataset encryption key (SecureString) |
-| `/truenas/s3/access_key` | AWS S3 access key for cloud sync (SecureString) |
-| `/truenas/s3/secret_key` | AWS S3 secret key for cloud sync (SecureString) |
-| `/truenas/s3/cloudsync_password` | TrueNAS cloud sync encryption password (SecureString) |
-| `/truenas/s3/cloudsync_salt` | TrueNAS cloud sync encryption salt (SecureString) |
-| `/truenas/smtp/user` | SMTP username for AWS SES (SecureString) |
-| `/truenas/smtp/pass` | SMTP password for AWS SES (SecureString) |
+| `/storage/truenas/api_key` | TrueNAS API key (SecureString) |
+| `/storage/truenas/zfs_key` | ZFS dataset encryption key (SecureString) |
+| `/storage/truenas/backups/s3_access_key` | AWS S3 access key for cloud sync (SecureString) |
+| `/storage/truenas/backups/s3_secret_key` | AWS S3 secret key for cloud sync (SecureString) |
+| `/storage/truenas/backups/cloudsync_password` | TrueNAS cloud sync encryption password (SecureString) |
+| `/storage/truenas/backups/cloudsync_salt` | TrueNAS cloud sync encryption salt (SecureString) |
+| `/infra/common/smtp/user` | SMTP username for AWS SES — shared with proxmox-playbook (SecureString) |
+| `/infra/common/smtp/pass` | SMTP password for AWS SES — shared with proxmox-playbook (SecureString) |
 | `/infra/common/cloudflare/api_token` | Cloudflare API token — shared with proxmox-playbook (SecureString) |
 | `/infra/common/cloudflare/zone_id` | Cloudflare zone ID — shared with proxmox-playbook (SecureString) |
 
 Store a parameter:
 ```bash
 aws ssm put-parameter \
-  --name "/truenas/api/key" \
+  --name "/storage/truenas/api_key" \
   --value "your-value-here" \
   --type SecureString \
-  --profile InfraProvisioner \
-  --region us-east-1
+  --profile <aws_profile> \
+  --region <aws_region>
 ```
 
 ---
@@ -77,7 +77,7 @@ Before running the playbook, complete these steps manually in the TrueNAS UI:
 
 1. Create your admin user (e.g. `sysop`) and assign `builtin_administrators` group
 2. Generate an API key for that user
-3. Store the API key in SSM at `/truenas/api/key`
+3. Store the API key in SSM at `/storage/truenas/api_key`
 
 ### 2. Configure Inventory
 ```bash
