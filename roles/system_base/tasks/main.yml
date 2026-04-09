@@ -8,7 +8,7 @@
 
 - name: User | Identify Admin User Object
   ansible.builtin.set_fact:
-    target_user_obj: "{{ all_users.json | selectattr('username', 'equalto', truenas_user) | first | default(None) }}"
+    target_user_obj: "{{ all_users.json | selectattr('username', 'equalto', truenas_admin_user) | first | default(None) }}"
 
 - name: User | Update Admin Alert Email
   ansible.builtin.uri:

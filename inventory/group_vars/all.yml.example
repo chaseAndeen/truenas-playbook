@@ -2,7 +2,7 @@
 # ==========================================================
 # AWS SSO / IAM Configuration
 # ==========================================================
-aws_profile: "YourSSOProfile"               # your AWS SSO profile name
+aws_profile: "YourSSOProfile"
 aws_region: "us-east-1"
 
 # ==========================================================
@@ -30,26 +30,27 @@ smtp_pass: "{{ lookup('amazon.aws.ssm_parameter', '/infra/common/smtp/pass', pro
 # ==========================================================
 # S3 Bucket Details
 # ==========================================================
-s3_bucket_name: "your-s3-bucket-name"       # your S3 bucket for cloud sync
-s3_region: "us-east-1"
+s3_bucket_name: "your-s3-bucket-name"
 s3_endpoint: "s3.amazonaws.com"
 
 aws_s3_storage_class: "DEEP_ARCHIVE"
-aws_s3_versioning_enabled: true
+aws_s3_versioning_enabled: false
 
 # ==========================================================
 # System Settings
 # ==========================================================
-truenas_hostname: "your-nas-hostname"       # TrueNAS hostname
-truenas_user: "user"                        # TrueNAS admin username
-truenas_domain: "example.com"               # your internal domain
+base_domain: "example.com"                  # all service FQDNs and emails derive from this
+
+truenas_hostname: "your-nas-hostname"
+truenas_admin_user: "your-admin-username"
+truenas_domain: "infra.{{ base_domain }}"   # override if your NAS lives on a different subdomain
 
 trusted_networks:
   - "192.168.x.x/24"                        # management network
   - "10.x.x.x/24"                           # VPN management plane
 
 server_networks:
-  - "192.168.x.x/24"                        # networks allowed to mount NFS shares
+  - "192.168.x.x/24"                        # allowed to mount NFS shares
 
 # ==========================================================
 # SSL
@@ -61,31 +62,31 @@ ssl_cert_name: "nas-ssl"
 ssl_key_type: "EC"
 ec_curve: "SECP256R1"
 digest_algorithm: "SHA256"
-ssl_common: "nas.example.com"               # FQDN for TLS cert
-ssl_san: "nas.example.com"
+ssl_common: "{{ truenas_hostname }}.{{ truenas_domain }}"
+ssl_san: "{{ truenas_hostname }}.{{ truenas_domain }}"
 
 # ==========================================================
 # Email Alerts
 # ==========================================================
-smtp_server: "example.smtp.com"
-smtp_port: 1234
+smtp_server: "email-smtp.{{ aws_region }}.amazonaws.com"
+smtp_port: 587
 smtp_security: "TLS"
-from_email: "alerts@example.com"
-alert_email: "admin@example.com"
+from_email: "alerts@{{ base_domain }}"
+alert_email: "admin@{{ base_domain }}"
 
 # ==========================================================
 # Storage Pool (RAID 10)
 # ==========================================================
-pool_name: "tank"                            # ZFS pool name
-vdev_mirror_1: ["sda", "sdb"]               # first mirror vdev
-vdev_mirror_2: ["sdc", "sdd"]               # second mirror vdev
+pool_name: "tank"
+vdev_mirror_1: ["sda", "sdb"]
+vdev_mirror_2: ["sdc", "sdd"]
 
 # ==========================================================
 # Datasets
 # ==========================================================
 datasets:
-  - { name: "dataset-01", recordsize: "128K", quota: "1TB", owner: "service_user", group: "service_group", share_type: "nfs", nfs_map: "maproot" }
-  - { name: "home",        recordsize: "128K",               owner: "sysop",        group: "sysop",         share_type: "smb" }
+  - { name: "dataset-01", recordsize: "128K", quota: "1TB",  owner: "service_user",                  group: "service_group",                 share_type: "nfs", nfs_map: "maproot" }
+  - { name: "home",       recordsize: "128K", quota: "500G", owner: "{{ truenas_admin_user }}",      group: "{{ truenas_admin_user }}",      share_type: "smb" }
 
 # ==========================================================
 # Users & Groups
