@@ -1,0 +1,8 @@
+---
+# midclt is the TrueNAS middleware client — there is no Ansible module for it.
+# command-instead-of-module is suppressed project-wide as a result.
+skip_list:
+  - command-instead-of-module
+
+warn_list:
+  - experimental

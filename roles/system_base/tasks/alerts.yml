@@ -1,0 +1,35 @@
+---
+- name: Alerts | Fetch existing alert services
+  ansible.builtin.command: midclt call alertservice.query
+  register: alert_services_raw
+  changed_when: false
+
+- name: Alerts | Set alert services fact
+  ansible.builtin.set_fact:
+    alert_services: "{{ alert_services_raw.stdout | from_json }}"
+
+# Electric Eel: 'type' moved into attributes; filter on type__title which is
+# the stable top-level discriminator (e.g. "Email" for the Mail service).
+- name: Alerts | Set mail alert list fact
+  ansible.builtin.set_fact:
+    mail_alert_list: "{{ alert_services | selectattr('type__title', 'equalto', 'Email') | list }}"
+
+- name: Alerts | Create email alert service
+  ansible.builtin.command: >
+    midclt call alertservice.create
+    '{{ {
+      "name": "E-Mail",
+      "level": "WARNING",
+      "enabled": true,
+      "attributes": {"type": "Mail"}
+    } | to_json }}'
+  when: mail_alert_list | length == 0
+
+- name: Alerts | Enable email alert service if disabled
+  ansible.builtin.command: >
+    midclt call alertservice.update
+    '[{{ mail_alert_list[0].id }}, {"enabled": true}]'
+  changed_when: true
+  when:
+    - mail_alert_list | length > 0
+    - not mail_alert_list[0].enabled

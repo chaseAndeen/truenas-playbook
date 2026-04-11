@@ -1,0 +1,27 @@
+---
+- name: User | Lookup admin user details
+  ansible.builtin.command: >
+    midclt call user.query '[["username", "=", "{{ truenas_admin_user }}"]]'
+  register: admin_user_raw
+  changed_when: false
+
+- name: User | Set admin user fact
+  ansible.builtin.set_fact:
+    admin_user_list: "{{ admin_user_raw.stdout | from_json }}"
+
+- name: User | Update admin alert email
+  ansible.builtin.command: >
+    midclt call user.update '[{{ admin_user_list[0].id }}, {"email": "{{ alert_email }}"}]'
+  changed_when: true
+  when:
+    - admin_user_list | length > 0
+    - admin_user_list[0].email != alert_email
+
+- name: User | Install admin SSH public key
+  ansible.builtin.command: >
+    midclt call user.update
+    '[{{ admin_user_list[0].id }}, {{ {"sshpubkey": admin_public_key} | to_json }}]'
+  no_log: true
+  when:
+    - admin_user_list | length > 0
+    - (admin_user_list[0].sshpubkey | default('') | trim) != (admin_public_key | trim)

@@ -1,0 +1,18 @@
+---
+- name: Network | Lookup current configuration
+  ansible.builtin.command: midclt call network.configuration.config
+  register: net_config_raw
+  changed_when: false
+
+- name: Network | Set network config fact
+  ansible.builtin.set_fact:
+    net_config: "{{ net_config_raw.stdout | from_json }}"
+
+- name: Network | Set hostname and domain
+  ansible.builtin.command: >
+    midclt call network.configuration.update
+    '{"hostname": "{{ truenas_hostname }}", "domain": "{{ truenas_domain }}"}'
+  changed_when: true
+  when: >
+    net_config.hostname != truenas_hostname or
+    net_config.domain != truenas_domain

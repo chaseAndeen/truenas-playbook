@@ -1,0 +1,55 @@
+---
+# Configures TrueNAS SCALE to authenticate users via the Authentik LDAP outpost.
+#
+# The LDAP outpost must be deployed by infra-playbook's svc.yml before this
+# runs. svc.yml seeds /infra/svc/ldap/bind_password and starts the
+# authentik-ldap container on svc-01 port 636.
+#
+# TrueNAS Electric Eel (24.10+) uses the directoryservices namespace.
+# The bind DN is: cn=truenas-ldap-svc,ou=users,dc=ldap,dc=goauthentik,dc=io
+
+- name: LDAP | Fetch current directory services configuration
+  ansible.builtin.command: midclt call directoryservices.config
+  register: _ds_config_raw
+  changed_when: false
+
+- name: LDAP | Set directory services config fact
+  ansible.builtin.set_fact:
+    _ds_config: "{{ _ds_config_raw.stdout | from_json }}"
+    _ldap_server_url: "ldaps://{{ svc_ldap_host }}:636"
+    _ldap_basedn: "{{ truenas_ldap_basedn }}"
+    _ldap_binddn: "{{ truenas_ldap_binddn }}"
+
+- name: LDAP | Configure Authentik LDAP directory service
+  ansible.builtin.command: >
+    midclt call directoryservices.update
+    '{{ {
+      "service_type": "LDAP",
+      "credential": {
+        "credential_type": "LDAP_PLAIN",
+        "binddn": _ldap_binddn,
+        "bindpw": ldap_bind_password
+      },
+      "enable": true,
+      "enable_account_cache": true,
+      "configuration": {
+        "service_type": "LDAP",
+        "server_urls": [_ldap_server_url],
+        "basedn": _ldap_basedn,
+        "starttls": false,
+        "validate_certificates": false,
+        "schema": "RFC2307BIS",
+        "search_bases": {
+          "base_user": "ou=users," ~ _ldap_basedn,
+          "base_group": "ou=groups," ~ _ldap_basedn,
+          "base_netgroup": none
+        }
+      }
+    } | to_json }}'
+  no_log: true
+  changed_when: true
+  when: >
+    not _ds_config.enable or
+    _ds_config.service_type | default('') != 'LDAP' or
+    ((_ds_config.configuration | default({})).server_urls | default([])) != [_ldap_server_url] or
+    (_ds_config.configuration | default({})).basedn | default('') != _ldap_basedn

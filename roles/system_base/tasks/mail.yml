@@ -1,0 +1,31 @@
+---
+- name: Mail | Lookup current SMTP configuration
+  ansible.builtin.command: midclt call mail.config
+  register: mail_config_raw
+  changed_when: false
+
+- name: Mail | Set mail config fact
+  ansible.builtin.set_fact:
+    mail_config: "{{ mail_config_raw.stdout | from_json }}"
+
+- name: Mail | Configure AWS SES SMTP
+  ansible.builtin.command: >
+    midclt call mail.update
+    '{{ {
+      "outgoingserver": smtp_server,
+      "port": smtp_port | int,
+      "security": smtp_security,
+      "fromemail": from_email,
+      "fromname": "TrueNAS - " ~ truenas_hostname,
+      "smtp": true,
+      "user": smtp_user,
+      "pass": smtp_pass
+    } | to_json }}'
+  no_log: true
+  changed_when: true
+  when: >
+    mail_config.outgoingserver != smtp_server or
+    mail_config.port != smtp_port | int or
+    mail_config.security != smtp_security or
+    mail_config.fromemail != from_email or
+    mail_config.user != smtp_user

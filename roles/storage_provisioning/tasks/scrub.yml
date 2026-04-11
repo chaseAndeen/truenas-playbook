@@ -1,0 +1,39 @@
+---
+- name: Scrub | Fetch pool details
+  ansible.builtin.command: >
+    midclt call pool.query '[["name", "=", "{{ pool_name }}"]]'
+  register: pool_details_raw
+  changed_when: false
+
+- name: Scrub | Set pool ID fact
+  ansible.builtin.set_fact:
+    vault_pool_id: "{{ (pool_details_raw.stdout | from_json)[0].id }}"
+  when: (pool_details_raw.stdout | from_json) | length > 0
+
+- name: Scrub | Fetch existing scrub tasks
+  ansible.builtin.command: midclt call pool.scrub.query
+  register: scrub_tasks_raw
+  changed_when: false
+
+- name: Scrub | Set scrub tasks fact
+  ansible.builtin.set_fact:
+    scrub_tasks: "{{ scrub_tasks_raw.stdout | from_json }}"
+
+- name: Scrub | Create weekly scrub task
+  ansible.builtin.command: >
+    midclt call pool.scrub.create
+    '{{ {
+      "pool": vault_pool_id | int,
+      "threshold": 35,
+      "schedule": {
+        "minute": "0",
+        "hour": "0",
+        "dom": "*",
+        "month": "*",
+        "dow": "0"
+      },
+      "enabled": true
+    } | to_json }}'
+  when:
+    - vault_pool_id is defined
+    - scrub_tasks | selectattr('pool', 'equalto', vault_pool_id | int) | list | length == 0

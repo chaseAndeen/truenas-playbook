@@ -1,0 +1,134 @@
+---
+- name: CloudSync | Fetch existing cloud credentials
+  ansible.builtin.command: midclt call cloudsync.credentials.query
+  register: existing_creds_raw
+  changed_when: false
+
+- name: CloudSync | Set existing credentials fact
+  ansible.builtin.set_fact:
+    existing_creds: "{{ existing_creds_raw.stdout | from_json }}"
+    s3_cred_list: >-
+      {{ existing_creds_raw.stdout | from_json | selectattr('name', 'equalto', 'Amazon S3') | list }}
+
+- name: CloudSync | Create S3 cloud credential
+  ansible.builtin.command: >
+    midclt call cloudsync.credentials.create
+    '{{ {
+      "name": "Amazon S3",
+      "provider": {
+        "type": "S3",
+        "access_key_id": aws_access_key,
+        "secret_access_key": aws_secret_key,
+        "endpoint": "https://" ~ s3_endpoint
+      }
+    } | to_json }}'
+  no_log: true
+  when: s3_cred_list | length == 0
+
+- name: CloudSync | Rotate S3 credential if access key has changed
+  ansible.builtin.command: >
+    midclt call cloudsync.credentials.update
+    '[{{ s3_cred_list[0].id }}, {{ {
+      "provider": {
+        "type": "S3",
+        "access_key_id": aws_access_key,
+        "secret_access_key": aws_secret_key,
+        "endpoint": "https://" ~ s3_endpoint
+      }
+    } | to_json }}]'
+  no_log: true
+  changed_when: true
+  when:
+    - s3_cred_list | length > 0
+    - s3_cred_list[0].provider.access_key_id | default('') != aws_access_key
+
+- name: CloudSync | Refresh credentials
+  ansible.builtin.command: midclt call cloudsync.credentials.query
+  register: final_creds_raw
+  changed_when: false
+
+- name: CloudSync | Extract S3 credential ID
+  ansible.builtin.set_fact:
+    dynamic_cred_id: >-
+      {{
+        (final_creds_raw.stdout | from_json)
+        | selectattr('name', 'equalto', 'Amazon S3')
+        | map(attribute='id')
+        | first
+        | int
+      }}
+
+- name: CloudSync | Fetch existing cloud sync tasks
+  ansible.builtin.command: midclt call cloudsync.query
+  register: existing_tasks_raw
+  changed_when: false
+
+- name: CloudSync | Set sync task facts
+  ansible.builtin.set_fact:
+    sync_task_list: >-
+      {{
+        existing_tasks_raw.stdout | from_json
+        | selectattr('description', 'equalto', 'Nightly Sync of vault to S3')
+        | list
+      }}
+
+- name: CloudSync | Create nightly encrypted cloud sync task
+  ansible.builtin.command: >
+    midclt call cloudsync.create
+    '{{ {
+      "description": "Nightly Sync of vault to S3",
+      "direction": "PUSH",
+      "transfer_mode": "SYNC",
+      "path": "/mnt/" ~ pool_name,
+      "credentials": dynamic_cred_id,
+      "snapshot": false,
+      "enabled": true,
+      "encryption": true,
+      "filename_encryption": true,
+      "encryption_password": cloudsync_password,
+      "encryption_salt": cloudsync_salt,
+      "attributes": {
+        "bucket": s3_bucket_name,
+        "folder": "",
+        "region": s3_region,
+        "storage_class": aws_s3_storage_class
+      },
+      "schedule": {
+        "minute": "0",
+        "hour": "2",
+        "dom": "*",
+        "month": "*",
+        "dow": "*"
+      }
+    } | to_json }}'
+  no_log: true
+  when: sync_task_list | length == 0
+
+- name: CloudSync | Update sync task if credential or bucket has drifted
+  vars:
+    existing_task: "{{ sync_task_list[0] }}"
+  ansible.builtin.command: >
+    midclt call cloudsync.update
+    '[{{ existing_task.id }}, {{ {
+      "credentials": dynamic_cred_id,
+      "attributes": {
+        "bucket": s3_bucket_name,
+        "folder": "",
+        "region": s3_region,
+        "storage_class": aws_s3_storage_class
+      },
+      "schedule": {
+        "minute": "0",
+        "hour": "2",
+        "dom": "*",
+        "month": "*",
+        "dow": "*"
+      }
+    } | to_json }}]'
+  no_log: true
+  changed_when: true
+  when:
+    - sync_task_list | length > 0
+    - (existing_task.credentials.id | default(0) | int != dynamic_cred_id | int) or
+      (existing_task.attributes.bucket | default('') != s3_bucket_name) or
+      (existing_task.schedule.hour | default('') != '2')

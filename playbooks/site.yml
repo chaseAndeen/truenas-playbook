@@ -1,17 +1,29 @@
 ---
 - name: Provision TrueNAS DataVault
   hosts: datavault
-  gather_facts: true
-  module_defaults:
-    ansible.builtin.uri:
-      validate_certs: false
-      headers:
-        Authorization: "Bearer {{ truenas_api_key }}"
-      body_format: json
+  gather_facts: false
+  become: true
 
+  pre_tasks:
+    - name: Fetch ansible SSH key from SSM
+      ansible.builtin.import_tasks: tasks/fetch_ssh_key.yml
+      tags: always
+
+    - name: Gather facts
+      ansible.builtin.gather_facts:
+      tags: always
 
   roles:
-  - role: system_base
-  - role: identity_managment
-  - role: storage_provisioning
-  - role: system_hardening
+    - role: system_base
+      tags: [system_base]
+    - role: identity_management
+      tags: [identity_management]
+    - role: storage_provisioning
+      tags: [storage_provisioning]
+    - role: system_hardening
+      tags: [system_hardening]
+
+  post_tasks:
+    - name: Clean up temp SSH key
+      ansible.builtin.import_tasks: tasks/cleanup_ssh_key.yml
+      tags: always

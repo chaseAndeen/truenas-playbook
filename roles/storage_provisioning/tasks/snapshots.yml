@@ -1,0 +1,28 @@
+---
+- name: Snapshot | Fetch existing snapshot tasks
+  ansible.builtin.command: midclt call pool.snapshottask.query
+  register: snapshots_raw
+  changed_when: false
+
+- name: Snapshot | Create periodic snapshot task
+  ansible.builtin.command: >
+    midclt call pool.snapshottask.create
+    '{{ {
+      "dataset": pool_name,
+      "recursive": true,
+      "lifetime_value": 2,
+      "lifetime_unit": "WEEK",
+      "naming_schema": "%Y-%m-%d_%H-%M",
+      "schedule": {
+        "minute": "0",
+        "hour": "*/6",
+        "dom": "*",
+        "month": "*",
+        "dow": "*"
+      },
+      "enabled": true
+    } | to_json }}'
+  when: >
+    (snapshots_raw.stdout | from_json)
+    | selectattr('dataset', 'equalto', pool_name)
+    | list | length == 0

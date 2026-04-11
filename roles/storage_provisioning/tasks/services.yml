@@ -1,0 +1,40 @@
+---
+- name: Service | Fetch current service states
+  ansible.builtin.command: >
+    midclt call service.query '[["service", "in", ["cifs", "nfs"]]]'
+  register: services_raw
+  changed_when: false
+
+- name: Service | Set services fact
+  ansible.builtin.set_fact:
+    storage_services: "{{ services_raw.stdout | from_json }}"
+
+- name: Service | Ensure services are enabled at boot
+  ansible.builtin.command: >
+    midclt call service.update '[{{ item.id }}, {"enable": true}]'
+  loop: "{{ storage_services }}"
+  when: not item.enable
+  loop_control:
+    label: "{{ item.service }}"
+
+- name: Service | Start services if not running
+  ansible.builtin.command: >
+    midclt call service.start '"{{ item.service }}"'
+  loop: "{{ storage_services }}"
+  when: item.state != 'RUNNING'
+  loop_control:
+    label: "{{ item.service }}"
+
+- name: Service | Fetch current NFS configuration
+  ansible.builtin.command: midclt call nfs.config
+  register: nfs_config_raw
+  changed_when: false
+
+- name: Service | Set NFS config fact
+  ansible.builtin.set_fact:
+    nfs_config: "{{ nfs_config_raw.stdout | from_json }}"
+
+- name: Service | Enable NFSv4
+  ansible.builtin.command: "midclt call nfs.update '{\"v4\": true}'"
+  changed_when: true
+  when: not nfs_config.v4

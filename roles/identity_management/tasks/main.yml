@@ -1,0 +1,6 @@
+---
+- name: Identity | Groups
+  ansible.builtin.import_tasks: groups.yml
+
+- name: Identity | Users
+  ansible.builtin.import_tasks: users.yml
