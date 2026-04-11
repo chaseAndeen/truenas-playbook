@@ -1,0 +1,18 @@
+---
+- name: SMB | Fetch current SMB service config
+  ansible.builtin.command: midclt call smb.config
+  register: system_hardening_smb_config_raw
+  changed_when: false
+
+- name: SMB | Set SMB config fact
+  ansible.builtin.set_fact:
+    system_hardening_smb_config: "{{ system_hardening_smb_config_raw.stdout | from_json }}"
+
+- name: SMB | Restrict SMB service to trusted networks
+  vars:
+    desired_smb_options: "hosts allow = {{ trusted_networks | join(' ') }} localhost\nhosts deny = ALL"
+  ansible.builtin.command: >
+    midclt call smb.update
+    '{{ {"smb_options": desired_smb_options} | to_json }}'
+  changed_when: true
+  when: system_hardening_smb_config.smb_options | trim != desired_smb_options | trim

@@ -1,0 +1,20 @@
+---
+- name: GUI | Lookup current system general settings
+  ansible.builtin.command: midclt call system.general.config
+  register: system_base_sys_general_raw
+  changed_when: false
+
+- name: GUI | Set system general fact
+  ansible.builtin.set_fact:
+    system_base_sys_general: "{{ system_base_sys_general_raw.stdout | from_json }}"
+
+- name: GUI | Disable HTTPS redirect and usage collection
+  ansible.builtin.command: >
+    midclt call system.general.update
+    '{"ui_httpsredirect": false, "usage_collection": false}'
+  changed_when: >
+    system_base_sys_general.ui_httpsredirect or
+    system_base_sys_general.usage_collection
+  when: >
+    system_base_sys_general.ui_httpsredirect or
+    system_base_sys_general.usage_collection

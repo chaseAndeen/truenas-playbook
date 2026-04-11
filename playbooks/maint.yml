@@ -1,56 +1,66 @@
 ---
-- name: Update TrueNAS
+- name: Update TrueNAS DataVault
   hosts: datavault
-  gather_facts: true
-  module_defaults:
-    ansible.builtin.uri:
-      validate_certs: false
-      headers:
-        Authorization: "Bearer {{ truenas_api_key }}"
-      body_format: json
+  gather_facts: false
+  become: true
+
+  pre_tasks:
+    - name: Fetch ansible SSH key from SSM
+      ansible.builtin.import_tasks: tasks/fetch_ssh_key.yml
+      tags: always
 
   tasks:
-    - name: Update | Check for TrueNAS SCALE Updates
-      ansible.builtin.uri:
-        url: "https://{{ ansible_host }}/api/v2.0/update/check_available"
-        method: POST
-      register: update_check
+    - name: Update | Check for available updates
+      ansible.builtin.command: midclt call update.check_available
+      register: update_check_raw
+      changed_when: false
 
-    - name: Update | Download Available Updates
-      ansible.builtin.uri:
-        url: "https://{{ ansible_host }}/api/v2.0/update/download"
-        method: GET
-      register: download_job
-      when: update_check.json.status == "AVAILABLE"
+    - name: Update | Set update check fact
+      ansible.builtin.set_fact:
+        update_check: "{{ update_check_raw.stdout | from_json }}"
 
-    - name: Update | Apply Updates and Initiate Reboot
-      ansible.builtin.uri:
-        url: "https://{{ ansible_host }}/api/v2.0/update/update"
-        method: POST
-        body:
-          reboot: true
-      when: 
-        - update_check.json.status == "AVAILABLE"
+    - name: Update | Download available updates
+      ansible.builtin.command: midclt call update.download
+      register: download_job_raw
+      changed_when: true
+      when: update_check.status == "AVAILABLE"
+
+    - name: Update | Apply updates and reboot
+      ansible.builtin.command: "midclt call update.update '{\"reboot\": true}'"
+      register: update_job_raw
+      changed_when: true
+      when:
+        - update_check.status == "AVAILABLE"
         - confirm_update | default(false) | bool
-      register: update_run
 
-    - name: Update | Monitor Update Job Progress
-      ansible.builtin.uri:
-        url: "https://{{ ansible_host }}/api/v2.0/core/get_jobs"
-        method: GET
-        body:
-          - [["id", "=", "{{ update_run.json }}"]]
-      register: job_status
-      until: job_status.json[0].state == 'SUCCESS'
+    - name: Update | Wait for update job to complete
+      ansible.builtin.command: >
+        midclt call core.get_jobs
+        '[["id", "=", {{ update_job_raw.stdout | trim | int }}]]'
+      register: update_job_status_raw
+      until: (update_job_status_raw.stdout | from_json)[0].state not in ['WAITING', 'RUNNING']
       retries: 30
       delay: 10
-      when: update_run.json is defined
+      changed_when: false
+      when:
+        - update_check.status == "AVAILABLE"
+        - confirm_update | default(false) | bool
+      failed_when: (update_job_status_raw.stdout | from_json)[0].state == 'FAILED'
 
-    - name: Update | Wait for System to Return Online
+    - name: Update | Wait for system to return online
       ansible.builtin.wait_for:
         host: "{{ ansible_host }}"
-        port: 443
+        port: "{{ truenas_ssh_port }}"
         delay: 60
         timeout: 900
         state: started
-      when: update_run.json is defined
+      delegate_to: localhost
+      become: false
+      when:
+        - update_check.status == "AVAILABLE"
+        - confirm_update | default(false) | bool
+
+  post_tasks:
+    - name: SSH Key | Remove temp private key
+      ansible.builtin.import_tasks: tasks/cleanup_ssh_key.yml
+      tags: always

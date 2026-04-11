@@ -1,128 +1,199 @@
 # truenas-playbook
 
-Ansible-driven Infrastructure as Code for TrueNAS SCALE. Provisions and configures a TrueNAS SCALE node entirely via the TrueNAS v2.0 REST API — no SSH required. Secrets are managed via AWS SSM Parameter Store, accessed through AWS IAM Identity Center SSO.
+Ansible playbook for provisioning and maintaining TrueNAS SCALE DataVault.
 
----
+## Architecture
 
-## Overview
+All configuration is applied over **SSH via `midclt`** — the TrueNAS middleware client. There is no HTTP API key. The bootstrap phase uses sysop basic auth one-time (via the shared `admin_password` SSM secret) to enable SSH and create the `ansible` service account. After bootstrap, the API is never touched again.
 
-This playbook connects to TrueNAS using `ansible_connection: local` and drives all configuration through HTTP calls to the TrueNAS API using a Bearer token. It is idempotent — safe to re-run at any time to converge configuration drift.
+```
+bootstrap.yml  →  Phase 1: SSH (truenas_admin builtin, password, port 22)
+                    - Creates ansible service user with SSH key + sudo
+                    - Moves SSH to port 2222
+                    - Disables root login and password auth
+               →  Phase 2: SSH (ansible user, key from SSM, port 2222)
+                    - Validates connectivity and midclt access
 
-### What it configures
+site.yml       →  SSH + midclt for all configuration tasks
+                    Role order encodes dependency graph:
+                    storage_datasets → system_base → identity_management
+                    → storage_provisioning → system_hardening
+maint.yml      →  SSH + midclt for TrueNAS SCALE updates
+```
 
-| Role | Responsibilities |
-|---|---|
-| `system_base` | Hostname, domain, admin email, SMTP/SES alerts, ACME/TLS cert via Cloudflare DNS |
-| `identity_managment` | Service groups and users with explicit UIDs/GIDs aligned to NFS clients |
-| `storage_provisioning` | ZFS pool, datasets, quotas, ACLs, NFS/SMB shares, periodic snapshots, S3 cloud sync |
-| `system_hardening` | Lock default admin account, restrict SMB to trusted networks |
+Secrets are stored in AWS SSM Parameter Store and fetched at runtime. No secrets are stored in this repository.
 
 ---
 
 ## Prerequisites
 
-### 1. AWS SSO Login
-All secrets are fetched from AWS SSM at runtime using the profile set in `aws_profile` (default: `InfraProvisioner`):
+### Local machine
 
 ```bash
-aws sso login --profile <aws_profile>
+# Install Ansible and required collections
+pip install ansible-core
+ansible-galaxy collection install -r requirements.yml
+
+# AWS CLI with the InfraProvisioner SSO profile
+aws sso login --profile InfraProvisioner
 ```
 
-### 2. Ansible Collections
-```bash
-ansible-galaxy collection install amazon.aws
-ansible-galaxy collection install community.general
-```
+### Inventory setup
 
-### 3. Python Dependencies
-```bash
-pip install boto3 botocore
-```
-
----
-
-## SSM Parameters
-
-The following parameters must exist in AWS SSM before running the playbook:
-
-| SSM Path | Description |
-|---|---|
-| `/storage/truenas/api_key` | TrueNAS API key (SecureString) |
-| `/storage/truenas/zfs_key` | ZFS dataset encryption key (SecureString) |
-| `/storage/truenas/backups/s3_access_key` | AWS S3 access key for cloud sync (SecureString) |
-| `/storage/truenas/backups/s3_secret_key` | AWS S3 secret key for cloud sync (SecureString) |
-| `/storage/truenas/backups/cloudsync_password` | TrueNAS cloud sync encryption password (SecureString) |
-| `/storage/truenas/backups/cloudsync_salt` | TrueNAS cloud sync encryption salt (SecureString) |
-| `/infra/common/smtp/user` | SMTP username for AWS SES — shared with proxmox-playbook (SecureString) |
-| `/infra/common/smtp/pass` | SMTP password for AWS SES — shared with proxmox-playbook (SecureString) |
-| `/infra/common/cloudflare/api_token` | Cloudflare API token — shared with proxmox-playbook (SecureString) |
-| `/infra/common/cloudflare/zone_id` | Cloudflare zone ID — shared with proxmox-playbook (SecureString) |
-
-Store a parameter:
-```bash
-aws ssm put-parameter \
-  --name "/storage/truenas/api_key" \
-  --value "your-value-here" \
-  --type SecureString \
-  --profile <aws_profile> \
-  --region <aws_region>
-```
-
----
-
-## Setup
-
-### 1. TrueNAS Post-Install (UI)
-Before running the playbook, complete these steps manually in the TrueNAS UI:
-
-1. Create your admin user (e.g. `sysop`) and assign `builtin_administrators` group
-2. Generate an API key for that user
-3. Store the API key in SSM at `/storage/truenas/api_key`
-
-### 2. Configure Inventory
 ```bash
 cp inventory/hosts.yml.example inventory/hosts.yml
 cp inventory/group_vars/all.yml.example inventory/group_vars/all.yml
+# Edit both files for your environment
 ```
 
-Edit `hosts.yml` with your TrueNAS IP. Edit `all.yml` to match your environment.
+### SSM Parameters
 
-### 3. Run the Playbook
+The following parameters must exist in SSM before running any playbook.
+
+| Path | Type | Description |
+|------|------|-------------|
+| `/infra/truenas/admin_password` | SecureString | truenas_admin builtin bootstrap password — TrueNAS only |
+| `/infra/common/public_key` | String | admin user SSH public key — shared with infra-playbook |
+| `/infra/common/ansible_public_key` | String | ansible service account SSH public key — shared with infra-playbook |
+| `/infra/common/ansible_private_key` | SecureString | ansible service account SSH private key — shared with infra-playbook |
+| `/infra/common/smtp/user` | String | AWS SES SMTP username — shared with infra-playbook |
+| `/infra/common/smtp/pass` | SecureString | AWS SES SMTP password — shared with infra-playbook |
+| `/storage/truenas/zfs_key` | SecureString | ZFS dataset encryption key |
+| `/storage/truenas/backups/s3_access_key` | String | S3 IAM access key for cloud sync |
+| `/storage/truenas/backups/s3_secret_key` | SecureString | S3 IAM secret key for cloud sync |
+| `/storage/truenas/backups/cloudsync_password` | SecureString | rclone crypt encryption password |
+| `/storage/truenas/backups/cloudsync_salt` | SecureString | rclone crypt encryption salt |
+| `/infra/svc/ldap/bind_password` | SecureString | LDAP bind password for truenas-ldap-svc — auto-generated by infra-playbook `svc.yml` |
+| `/infra/svc/ldap/outpost_token` | SecureString | Authentik LDAP outpost token — auto-fetched and stored by infra-playbook `svc.yml` |
+
+---
+
+## Bootstrap
+
+Bootstrap is a one-time operation on a fresh TrueNAS install. No HTTP API is used at any point.
+
+**Manual prerequisites (before running bootstrap.yml):**
+1. Complete the TrueNAS setup wizard — set the built-in `truenas_admin` password to match the value at `/infra/truenas/admin_password` in SSM
+2. Enable SSH and allow password login via the TrueNAS UI:
+   - **Services** → SSH → enable the service and turn on *Allow Password Authentication*
+   - **Credentials** → Local Users → `truenas_admin` → edit → enable *Allow Password Login*
+3. Install `sshpass` on your control machine (required for password-based SSH in Phase 1):
+   ```bash
+   apt install sshpass                                   # Debian/Ubuntu
+   brew install hudochenkov/sshpass/sshpass              # macOS
+   ```
+
 ```bash
+ansible-playbook playbooks/bootstrap.yml
+```
+
+**Phase 1** connects via SSH as the `truenas_admin` builtin account (password from SSM, port 22) and:
+- Creates the bare ZFS pool (required prerequisite — TrueNAS rejects SSH public keys on users without a pool-backed home directory)
+- Creates the `ansible` service user with passwordless sudo and the SSH public key from SSM
+- Enables the SSH service at boot
+- Moves SSH to port 2222 and disables root login and password auth
+- Restarts SSH (Phase 1 connection drops; play waits for port 2222 before proceeding)
+
+**Phase 2** connects via SSH as the `ansible` user (key auth, port 2222) and validates `midclt` access.
+
+The pool created in bootstrap is a bare `pool.create` — no datasets, no shares, no services. All storage configuration remains in `site.yml`. `storage_provisioning/pool.yml` detects the pool already exists and skips creation.
+
+After bootstrap, run `site.yml` to complete full configuration. The `system_hardening` role will lock the `truenas_admin` builtin account on the first site run.
+
+---
+
+## Usage
+
+```bash
+# Full provisioning run
 ansible-playbook playbooks/site.yml
+
+# Run a single role (tags: storage_datasets | system_base | identity_management | storage_provisioning | system_hardening)
+ansible-playbook playbooks/site.yml --tags storage_provisioning
+
+# Check for available updates (does not apply)
+ansible-playbook playbooks/maint.yml
+
+# Apply updates — requires explicit confirmation flag
+ansible-playbook playbooks/maint.yml -e confirm_update=true
 ```
 
 ---
 
-## Architecture Notes
+## Dataset Configuration
 
-**API-driven, no SSH** — TrueNAS SCALE does not support standard SSH-based Ansible management. All tasks use `ansible.builtin.uri` against the TrueNAS v2.0 REST API with a Bearer token. `ansible_connection: local` means the playbook runs from your workstation and makes HTTP calls directly to the TrueNAS host.
+Datasets are defined in `inventory/group_vars/all.yml` under the `datasets` key.
 
-**Idempotent by design** — every task checks current state before acting. Re-running is safe and will only change what has drifted.
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | yes | Dataset name — created as `<pool>/<name>` |
+| `recordsize` | yes | ZFS record size (e.g. `128K`, `1M`) |
+| `quota` | no | Hard quota — `G` and `T` suffixes supported (e.g. `500G`, `2TB`) |
+| `owner` | yes | Username that owns the dataset mount point |
+| `group` | yes | Group that owns the dataset mount point |
+| `share_type` | yes | `smb` or `nfs` |
+| `acltype` | no | `POSIX` or `NFSV4` — defaults to `NFSV4` for SMB, `POSIX` for NFS |
+| `nfs_map` | no | `mapall` or `maproot` — NFS only |
 
-**UID/GID alignment** — service user UIDs and GIDs defined here must match what NFS clients expect. For example, `pbs_user` (uid 2000) / `proxmox_group` (gid 2000) is mirrored in the proxmox-playbook `pbs` role so the PBS VM can write to the NFS share correctly.
+**`acltype` guidance:**
+- Use `NFSV4` (default for `share_type: smb`) for all SMB shares. NFSv4 ACLs with `INHERIT` flags are required for correct Windows ACL semantics and for macOS/iOS SMB clients to list directory contents. Without INHERIT ACEs, iOS mounts the share successfully but shows it as empty.
+- Use `POSIX` for NFS-only shares. POSIX ACLs map cleanly to Unix permission bits and are sufficient for NFS clients that do not require rich ACL inheritance.
 
-**Shared Cloudflare credentials** — Cloudflare token and zone ID live at `/infra/common/cloudflare/` in SSM and are shared with the proxmox-playbook. One set of credentials, no duplication.
-
-**S3 cloud sync** — nightly encrypted sync of the entire ZFS pool to S3 DEEP_ARCHIVE using TrueNAS built-in cloud sync. Encryption password and salt are stored in SSM.
+**UID/GID alignment:** Service user UIDs and GIDs must match what NFS clients expect. For example, `pbs_user` (uid 2000) / `proxmox_group` (gid 2000) is mirrored in the infra-playbook `pbs` role so the PBS VM can write to its NFS share correctly. Coordinate any changes across both playbooks.
 
 ---
 
-## Repository Structure
+## Structure
 
 ```
 .
 ├── ansible.cfg
-├── README.md
+├── requirements.yml
+├── .ansible-lint
+├── .github/
+│   └── workflows/
+│       └── ci.yml                  # Lint + syntax check on push/PR to main
 ├── inventory/
+│   ├── hosts.yml                   # gitignored — copy from .example
 │   ├── hosts.yml.example
 │   └── group_vars/
+│       ├── all.yml                 # gitignored — copy from .example
 │       └── all.yml.example
-├── playbooks/
-│   └── site.yml
-└── roles/
-    ├── system_base/          # hostname, SMTP, ACME/TLS cert
-    ├── identity_managment/   # service groups and users
-    ├── storage_provisioning/ # ZFS pool, datasets, shares, snapshots, cloud sync
-    └── system_hardening/     # account lockdown, SMB restrictions
+└── playbooks/
+    ├── bootstrap.yml               # One-time: enable SSH, create ansible user
+    ├── site.yml                    # Full provisioning run
+    ├── maint.yml                   # Update TrueNAS SCALE
+    └── tasks/
+        ├── fetch_ssh_key.yml       # Pull ansible SSH private key from SSM
+        └── cleanup_ssh_key.yml     # Remove temp key after run
+
+roles/
+├── storage_datasets/               # ZFS dataset provisioning — runs first, no user deps
+│   └── tasks/
+│       └── datasets.yml            # Encrypted ZFS datasets with quota and acltype
+├── system_base/                    # Admin user, hostname, SMTP, GUI settings, email alerts, LDAP
+│   └── tasks/
+│       ├── user.yml                # Create sysop admin user, sync password/SSH key every run
+│       ├── network.yml             # Hostname and domain
+│       ├── mail.yml                # AWS SES SMTP
+│       ├── gui.yml                 # HTTPS redirect, usage collection
+│       ├── alerts.yml              # Email alert service
+│       └── ldap.yml                # Authentik LDAP SSO via directoryservices.update
+├── identity_management/            # Service groups and users
+│   └── tasks/
+│       ├── groups.yml
+│       └── users.yml
+├── storage_provisioning/           # ACLs, shares, services, backups, scrub — runs after users exist
+│   └── tasks/
+│       ├── acl.yml                 # Ownership and ACL (POSIX or NFSv4 with INHERIT flags)
+│       ├── shares.yml              # SMB (guest disabled) and NFS shares
+│       ├── services.yml            # cifs/nfs service state; NFSv4 enforced
+│       ├── snapshots.yml           # Periodic snapshot task
+│       ├── cloudsync.yml           # Nightly encrypted S3 sync with credential rotation
+│       └── scrub.yml               # Weekly ZFS pool scrub
+└── system_hardening/               # Account lockdown, SSH hardening, SMB restrictions
+    └── tasks/
+        ├── users.yml               # Lock truenas_admin builtin account
+        ├── ssh.yml                 # Enforce SSH port, disable password auth
+        └── smb.yml                 # Restrict SMB to trusted networks
 ```

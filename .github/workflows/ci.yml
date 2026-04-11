@@ -1,0 +1,142 @@
+---
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  lint:
+    name: Ansible Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5.4.0
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install ansible-core ansible-lint
+          ansible-galaxy collection install -r requirements.yml
+
+      - name: Run ansible-lint
+        run: ansible-lint
+        env:
+          ANSIBLE_ROLES_PATH: ./roles
+
+  syntax-check:
+    name: Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5.4.0
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install ansible-core
+          ansible-galaxy collection install -r requirements.yml
+
+      - name: Create stub inventory for syntax check
+        run: |
+          mkdir -p inventory/group_vars
+          cat > inventory/hosts.yml << 'EOF'
+          all:
+            hosts:
+              datavault:
+                ansible_host: 192.168.1.22
+                ansible_user: ansible
+                ansible_port: 2222
+                ansible_become: true
+          EOF
+          cat > inventory/group_vars/all.yml << 'EOF'
+          aws_profile: "dummy"
+          aws_region: "us-east-1"
+          base_domain: "example.com"
+          truenas_hostname: "datavault"
+          truenas_admin_user: "admin"
+          truenas_domain: "infra.example.com"
+          truenas_ssh_port: 2222
+          ansible_service_user: "ansible"
+          truenas_admin_password: "dummy"
+          svc_ldap_host: "192.168.20.20"
+          truenas_ldap_basedn: "dc=ldap,dc=goauthentik,dc=io"
+          truenas_ldap_binddn: "cn=truenas-ldap-svc,ou=users,dc=ldap,dc=goauthentik,dc=io"
+          ldap_bind_password: "dummy"
+          admin_password: "dummy"
+          admin_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5 dummy-admin"
+          ansible_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5 dummy-ansible"
+          zfs_encryption_key: "dummy"
+          aws_access_key: "dummy"
+          aws_secret_key: "dummy"
+          cloudsync_password: "dummy"
+          cloudsync_salt: "dummy"
+          smtp_user: "dummy"
+          smtp_pass: "dummy"
+          s3_bucket_name: "dummy-bucket"
+          s3_endpoint: "s3.amazonaws.com"
+          s3_region: "us-east-1"
+          aws_s3_storage_class: "DEEP_ARCHIVE"
+          smtp_server: "email-smtp.us-east-1.amazonaws.com"
+          smtp_port: 587
+          smtp_security: "TLS"
+          from_email: "alerts@example.com"
+          alert_email: "admin@example.com"
+          pool_name: "vault"
+          vdev_mirror_1: ["sda", "sdb"]
+          vdev_mirror_2: ["sdc", "sdd"]
+          trusted_networks:
+            - "192.168.1.0/24"
+          server_networks:
+            - "192.168.1.0/24"
+          datasets:
+            - name: "personal"
+              recordsize: "128K"
+              quota: "500G"
+              owner: "sysop"
+              group: "sysop"
+              share_type: "smb"
+              acltype: "NFSV4"
+            - name: "proxmox_backups"
+              recordsize: "128K"
+              quota: "1TB"
+              owner: "pbs_user"
+              group: "proxmox_group"
+              share_type: "nfs"
+              nfs_map: "mapall"
+          service_groups:
+            - { name: "proxmox_group", gid: 2000 }
+          service_users:
+            - { name: "pbs_user", uid: 2000, group: "proxmox_group", comment: "PBS" }
+          EOF
+
+      - name: Syntax check bootstrap
+        run: >
+          ansible-playbook playbooks/bootstrap.yml
+          --syntax-check
+          -i inventory/hosts.yml
+
+      - name: Syntax check site
+        run: >
+          ansible-playbook playbooks/site.yml
+          --syntax-check
+          -i inventory/hosts.yml
+
+      - name: Syntax check maint
+        run: >
+          ansible-playbook playbooks/maint.yml
+          --syntax-check
+          -i inventory/hosts.yml

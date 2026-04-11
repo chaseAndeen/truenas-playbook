@@ -1,0 +1,89 @@
+---
+- name: Share | Fetch current SMB shares
+  ansible.builtin.command: midclt call sharing.smb.query
+  register: storage_provisioning_smb_shares_raw
+  changed_when: false
+
+- name: Share | Fetch current NFS shares
+  ansible.builtin.command: midclt call sharing.nfs.query
+  register: storage_provisioning_nfs_shares_raw
+  changed_when: false
+
+- name: Share | Set share list facts
+  ansible.builtin.set_fact:
+    storage_provisioning_smb_list: "{{ storage_provisioning_smb_shares_raw.stdout | from_json }}"
+    storage_provisioning_nfs_list: "{{ storage_provisioning_nfs_shares_raw.stdout | from_json }}"
+
+# --- SMB ---
+
+- name: Share | Create missing SMB shares
+  ansible.builtin.command: >
+    midclt call sharing.smb.create
+    '{{ {
+      "path": "/mnt/" ~ pool_name ~ "/" ~ item.name,
+      "name": item.name,
+      "enabled": true
+    } | to_json }}'
+  loop: "{{ datasets | selectattr('share_type', 'equalto', 'smb') | list }}"
+  when: ("/mnt/" ~ pool_name ~ "/" ~ item.name) not in (storage_provisioning_smb_list | map(attribute='path') | list)
+  changed_when: true
+  loop_control:
+    label: "{{ item.name }}"
+
+# --- NFS ---
+
+- name: Share | Create missing NFS shares
+  vars:
+    existing_share: "{{ storage_provisioning_nfs_list | selectattr('path', 'equalto', '/mnt/' ~ pool_name ~ '/' ~ item.name) | first | default({}) }}"
+  ansible.builtin.command: >
+    midclt call sharing.nfs.create
+    '{{ {
+      "path": "/mnt/" ~ pool_name ~ "/" ~ item.name,
+      "networks": server_networks,
+      "mapall_user": item.owner if item.nfs_map | default("") == "mapall" else "",
+      "mapall_group": item.group if item.nfs_map | default("") == "mapall" else "",
+      "maproot_user": "root" if item.nfs_map | default("") == "maproot" else "",
+      "maproot_group": "wheel" if item.nfs_map | default("") == "maproot" else "",
+      "enabled": true
+    } | to_json }}'
+  loop: "{{ datasets | selectattr('share_type', 'equalto', 'nfs') | list }}"
+  when: existing_share.id is not defined
+  changed_when: true
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Share | Update NFS share networks
+  vars:
+    existing_share: "{{ storage_provisioning_nfs_list | selectattr('path', 'equalto', '/mnt/' ~ pool_name ~ '/' ~ item.name) | first | default({}) }}"
+  ansible.builtin.command: >
+    midclt call sharing.nfs.update
+    '{{ existing_share.id }}'
+    '{{ {"networks": server_networks} | to_json }}'
+  loop: "{{ datasets | selectattr('share_type', 'equalto', 'nfs') | list }}"
+  when:
+    - existing_share.id is defined
+    - (existing_share.networks | default([]) | sort) != (server_networks | sort)
+  changed_when: true
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Share | Update NFS share map settings
+  vars:
+    existing_share: "{{ storage_provisioning_nfs_list | selectattr('path', 'equalto', '/mnt/' ~ pool_name ~ '/' ~ item.name) | first | default({}) }}"
+    desired_mapall_user: "{{ item.owner if item.nfs_map | default('') == 'mapall' else '' }}"
+  ansible.builtin.command: >
+    midclt call sharing.nfs.update
+    '{{ existing_share.id }}'
+    '{{ {
+      "mapall_user": item.owner if item.nfs_map | default("") == "mapall" else "",
+      "mapall_group": item.group if item.nfs_map | default("") == "mapall" else "",
+      "maproot_user": "root" if item.nfs_map | default("") == "maproot" else "",
+      "maproot_group": "wheel" if item.nfs_map | default("") == "maproot" else ""
+    } | to_json }}'
+  loop: "{{ datasets | selectattr('share_type', 'equalto', 'nfs') | list }}"
+  when:
+    - existing_share.id is defined
+    - (existing_share.mapall_user | default("")) != desired_mapall_user
+  changed_when: true
+  loop_control:
+    label: "{{ item.name }}"

@@ -1,0 +1,104 @@
+---
+- name: ACL | Lookup all local users
+  ansible.builtin.command: midclt call user.query '[]'
+  register: storage_provisioning_all_users_raw
+  changed_when: false
+
+- name: ACL | Lookup all local groups
+  ansible.builtin.command: midclt call group.query '[]'
+  register: storage_provisioning_all_groups_raw
+  changed_when: false
+
+- name: ACL | Get current ACL state for each dataset
+  ansible.builtin.command: >
+    midclt call filesystem.getacl
+    '"/mnt/{{ pool_name }}/{{ item.name }}"'
+  loop: "{{ datasets }}"
+  register: storage_provisioning_current_acl_raw
+  changed_when: false
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: ACL | Build owner identity map
+  vars:
+    all_users: "{{ storage_provisioning_all_users_raw.stdout | from_json }}"
+    all_groups: "{{ storage_provisioning_all_groups_raw.stdout | from_json }}"
+    current_acl: "{{ (storage_provisioning_current_acl_raw.results | selectattr('item.name', 'equalto', item.name) | first).stdout | from_json }}"
+    matched_user: "{{ all_users | selectattr('username', 'equalto', item.owner) | list }}"
+    matched_group: "{{ all_groups | selectattr('group', 'equalto', item.group) | list }}"
+  ansible.builtin.set_fact:
+    storage_provisioning_id_map: >-
+      {{
+        storage_provisioning_id_map | default({}) | combine({
+          item.name: {
+            'uid': (matched_user | first).uid if matched_user | length > 0 else current_acl.uid,
+            'gid': (matched_group | first).gid if matched_group | length > 0 else current_acl.gid
+          }
+        })
+      }}
+  loop: "{{ datasets }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: ACL | Apply ownership and permissions (NFSv4 datasets)
+  vars:
+    current_acl: "{{ (storage_provisioning_current_acl_raw.results | selectattr('item.name', 'equalto', item.name) | first).stdout | from_json }}"
+    target_uid: "{{ storage_provisioning_id_map[item.name].uid }}"
+    target_gid: "{{ storage_provisioning_id_map[item.name].gid }}"
+  ansible.builtin.command: >
+    midclt call filesystem.setacl
+    '{{ {
+      "path": "/mnt/" ~ pool_name ~ "/" ~ item.name,
+      "uid": target_uid | int,
+      "gid": target_gid | int,
+      "acltype": "NFS4",
+      "dacl": [
+        {
+          "tag": "owner@",
+          "type": "ALLOW",
+          "perms": {"BASIC": "FULL_CONTROL"},
+          "flags": {"BASIC": "INHERIT"}
+        },
+        {
+          "tag": "group@",
+          "type": "ALLOW",
+          "perms": {"BASIC": "MODIFY"},
+          "flags": {"BASIC": "INHERIT"}
+        }
+      ],
+      "nfs41_flags": {"autoinherit": false, "protected": true},
+      "options": {"recursive": true, "stripacl": false}
+    } | to_json }}'
+  loop: "{{ datasets }}"
+  when:
+    - item.acltype | default('NFSV4' if item.share_type == 'smb' else 'POSIX') == 'NFSV4'
+    - current_acl.uid != target_uid | int or
+      current_acl.gid != target_gid | int or
+      current_acl.acltype != 'NFS4' or
+      (current_acl.trivial | default(true))
+  changed_when: true
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: ACL | Apply ownership and permissions (POSIX datasets)
+  vars:
+    current_acl: "{{ (storage_provisioning_current_acl_raw.results | selectattr('item.name', 'equalto', item.name) | first).stdout | from_json }}"
+    target_uid: "{{ storage_provisioning_id_map[item.name].uid }}"
+    target_gid: "{{ storage_provisioning_id_map[item.name].gid }}"
+  ansible.builtin.command: >
+    midclt call filesystem.setacl
+    '{{ {
+      "path": "/mnt/" ~ pool_name ~ "/" ~ item.name,
+      "uid": target_uid | int,
+      "gid": target_gid | int,
+      "dacl": [],
+      "options": {"recursive": true, "stripacl": true}
+    } | to_json }}'
+  loop: "{{ datasets }}"
+  when:
+    - item.acltype | default('NFSV4' if item.share_type == 'smb' else 'POSIX') == 'POSIX'
+    - current_acl.uid != target_uid | int or
+      current_acl.gid != target_gid | int
+  changed_when: true
+  loop_control:
+    label: "{{ item.name }}"

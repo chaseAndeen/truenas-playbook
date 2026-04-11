@@ -1,0 +1,38 @@
+---
+- name: SSH | Fetch current SSH configuration
+  ansible.builtin.command: midclt call ssh.config
+  register: system_hardening_ssh_config_raw
+  changed_when: false
+
+- name: SSH | Set SSH config fact
+  ansible.builtin.set_fact:
+    system_hardening_ssh_config: "{{ system_hardening_ssh_config_raw.stdout | from_json }}"
+
+- name: SSH | Enforce SSH hardening settings  # noqa: literal-compare
+  ansible.builtin.command: >
+    midclt call ssh.update
+    '{{ {
+      "tcpport": truenas_ssh_port | int,
+      "passwordauth": false
+    } | to_json }}'
+  register: system_hardening_ssh_hardening_result
+  changed_when: >
+    system_hardening_ssh_config.tcpport | int != truenas_ssh_port | int or
+    system_hardening_ssh_config.passwordauth
+  when: >
+    system_hardening_ssh_config.tcpport | int != truenas_ssh_port | int or
+    system_hardening_ssh_config.passwordauth
+
+- name: SSH | Restart SSH to apply hardening changes
+  ansible.builtin.command: midclt call service.restart '"ssh"'
+  when: system_hardening_ssh_hardening_result is changed
+  changed_when: system_hardening_ssh_hardening_result is changed
+
+- name: SSH | Wait for SSH to recover after restart
+  ansible.builtin.wait_for:
+    host: "{{ ansible_host }}"
+    port: "{{ truenas_ssh_port }}"
+    timeout: 30
+    state: started
+  delegate_to: localhost
+  when: system_hardening_ssh_hardening_result is changed

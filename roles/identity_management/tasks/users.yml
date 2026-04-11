@@ -1,0 +1,28 @@
+---
+- name: User | Fetch existing users
+  ansible.builtin.command: midclt call user.query
+  register: identity_management_existing_users_raw
+  changed_when: false
+
+- name: User | Set existing users fact
+  ansible.builtin.set_fact:
+    identity_management_existing_users: "{{ identity_management_existing_users_raw.stdout | from_json }}"
+
+- name: User | Create missing service users
+  ansible.builtin.command: >
+    midclt call user.create
+    '{{ {
+      "username": item.name,
+      "uid": item.uid | int,
+      "group": identity_management_group_lookup[item.group] | int,
+      "full_name": item.comment,
+      "password_disabled": true,
+      "smb": false,
+      "locked": false,
+      "shell": "/usr/sbin/nologin"
+    } | to_json }}'
+  loop: "{{ service_users }}"
+  when: item.name not in (identity_management_existing_users | map(attribute='username') | list)
+  changed_when: true
+  loop_control:
+    label: "{{ item.name }}"

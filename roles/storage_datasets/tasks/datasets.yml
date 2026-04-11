@@ -1,0 +1,70 @@
+---
+- name: Dataset | Build quota bytes map
+  ansible.builtin.set_fact:
+    storage_datasets_quota_bytes_map: >-
+      {{
+        storage_datasets_quota_bytes_map | default({}) | combine({
+          item.name: (
+            item.quota | regex_replace('[^0-9]', '') | int *
+            (1099511627776 if 'T' in item.quota else 1073741824)
+          ) if item.quota is defined else 0
+        })
+      }}
+  loop: "{{ datasets }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Dataset | Fetch existing datasets
+  ansible.builtin.command: midclt call pool.dataset.query
+  register: storage_datasets_existing_datasets_raw
+  changed_when: false
+
+- name: Dataset | Set existing datasets fact
+  ansible.builtin.set_fact:
+    storage_datasets_existing_datasets: "{{ storage_datasets_existing_datasets_raw.stdout | from_json }}"
+
+- name: Dataset | Create missing datasets
+  ansible.builtin.command: >
+    midclt call pool.dataset.create
+    '{{ {
+      "name": pool_name ~ "/" ~ item.name,
+      "type": "FILESYSTEM",
+      "atime": "OFF",
+      "recordsize": item.recordsize,
+      "acltype": item.acltype | default("NFSV4" if item.share_type == "smb" else "POSIX"),
+      "share_type": "SMB" if item.share_type == "smb" else "GENERIC",
+      "encryption": true,
+      "encryption_options": {
+        "key": zfs_encryption_key,
+        "generate_key": false
+      },
+      "inherit_encryption": false,
+      "refquota": storage_datasets_quota_bytes_map[item.name]
+    } | to_json }}'
+  loop: "{{ datasets }}"
+  when: (pool_name ~ "/" ~ item.name) not in (storage_datasets_existing_datasets | map(attribute='id') | list)
+  changed_when: true
+  no_log: true
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Dataset | Update existing datasets
+  vars:
+    current_ds: "{{ storage_datasets_existing_datasets | selectattr('id', 'equalto', pool_name ~ '/' ~ item.name) | first | default({}) }}"
+  ansible.builtin.command: >
+    midclt call pool.dataset.update
+    '"{{ pool_name }}/{{ item.name }}"'
+    '{{ {
+      "atime": "OFF",
+      "recordsize": item.recordsize,
+      "refquota": storage_datasets_quota_bytes_map[item.name]
+    } | to_json }}'
+  loop: "{{ datasets }}"
+  when:
+    - (pool_name ~ "/" ~ item.name) in (storage_datasets_existing_datasets | map(attribute='id') | list)
+    - current_ds | length > 0
+    - (current_ds.refquota.rawvalue | int != storage_datasets_quota_bytes_map[item.name] | int) or
+      (current_ds.recordsize.value != item.recordsize)
+  changed_when: true
+  loop_control:
+    label: "{{ item.name }}"

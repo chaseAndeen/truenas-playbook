@@ -1,0 +1,40 @@
+---
+- name: Scrub | Fetch pool details
+  ansible.builtin.command: >
+    midclt call pool.query '[["name", "=", "{{ pool_name }}"]]'
+  register: storage_provisioning_pool_details_raw
+  changed_when: false
+
+- name: Scrub | Set pool ID fact
+  ansible.builtin.set_fact:
+    storage_provisioning_vault_pool_id: "{{ (storage_provisioning_pool_details_raw.stdout | from_json)[0].id }}"
+  when: (storage_provisioning_pool_details_raw.stdout | from_json) | length > 0
+
+- name: Scrub | Fetch existing scrub tasks
+  ansible.builtin.command: midclt call pool.scrub.query
+  register: storage_provisioning_scrub_tasks_raw
+  changed_when: false
+
+- name: Scrub | Set scrub tasks fact
+  ansible.builtin.set_fact:
+    storage_provisioning_scrub_tasks: "{{ storage_provisioning_scrub_tasks_raw.stdout | from_json }}"
+
+- name: Scrub | Create weekly scrub task
+  ansible.builtin.command: >
+    midclt call pool.scrub.create
+    '{{ {
+      "pool": storage_provisioning_vault_pool_id | int,
+      "threshold": 35,
+      "schedule": {
+        "minute": "0",
+        "hour": "0",
+        "dom": "*",
+        "month": "*",
+        "dow": "0"
+      },
+      "enabled": true
+    } | to_json }}'
+  when:
+    - storage_provisioning_vault_pool_id is defined
+    - storage_provisioning_scrub_tasks | selectattr('pool', 'equalto', storage_provisioning_vault_pool_id | int) | list | length == 0
+  changed_when: true

@@ -1,0 +1,3 @@
+---
+- name: Datasets | Provision ZFS datasets
+  ansible.builtin.import_tasks: datasets.yml
