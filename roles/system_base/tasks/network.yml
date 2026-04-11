@@ -8,7 +8,7 @@
   ansible.builtin.set_fact:
     system_base_net_config: "{{ system_base_net_config_raw.stdout | from_json }}"
 
-- name: Network | Set hostname and domain
+- name: Network | Set hostname and domain  # noqa: literal-compare
   ansible.builtin.command: >
     midclt call network.configuration.update
     '{"hostname": "{{ truenas_hostname }}", "domain": "{{ truenas_domain }}"}'

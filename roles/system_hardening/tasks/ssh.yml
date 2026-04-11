@@ -8,7 +8,7 @@
   ansible.builtin.set_fact:
     system_hardening_ssh_config: "{{ system_hardening_ssh_config_raw.stdout | from_json }}"
 
-- name: SSH | Enforce SSH hardening settings
+- name: SSH | Enforce SSH hardening settings  # noqa: literal-compare
   ansible.builtin.command: >
     midclt call ssh.update
     '{{ {

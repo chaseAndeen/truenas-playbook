@@ -149,7 +149,7 @@
       ansible.builtin.set_fact:
         current_ssh_config: "{{ ssh_config_raw.stdout | from_json }}"
 
-    - name: Bootstrap | Configure SSH port and disable password auth
+    - name: Bootstrap | Configure SSH port and disable password auth  # noqa: literal-compare
       ansible.builtin.command: >
         midclt call ssh.update
         '{{ {
