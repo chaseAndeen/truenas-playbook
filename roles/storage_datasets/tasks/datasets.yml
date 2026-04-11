@@ -52,11 +52,12 @@
     current_ds: "{{ existing_datasets | selectattr('id', 'equalto', pool_name ~ '/' ~ item.name) | first | default({}) }}"
   ansible.builtin.command: >
     midclt call pool.dataset.update
-    '["{{ pool_name }}/{{ item.name }}", {{ {
+    '"{{ pool_name }}/{{ item.name }}"'
+    '{{ {
       "atime": "OFF",
       "recordsize": item.recordsize,
       "refquota": quota_bytes_map[item.name]
-    } | to_json }}]'
+    } | to_json }}'
   loop: "{{ datasets }}"
   when:
     - (pool_name ~ "/" ~ item.name) in (existing_datasets | map(attribute='id') | list)

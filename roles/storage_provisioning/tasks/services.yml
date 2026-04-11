@@ -11,7 +11,7 @@
 
 - name: Service | Ensure services are enabled at boot
   ansible.builtin.command: >
-    midclt call service.update '[{{ item.id }}, {"enable": true}]'
+    midclt call service.update '{{ item.id }}' '{"enable": true}'
   loop: "{{ storage_services }}"
   when: not item.enable
   loop_control:
@@ -35,6 +35,9 @@
     nfs_config: "{{ nfs_config_raw.stdout | from_json }}"
 
 - name: Service | Enable NFSv4
-  ansible.builtin.command: "midclt call nfs.update '{\"v4\": true}'"
+  ansible.builtin.command: >
+    midclt call nfs.update '{"protocols": ["NFSV3", "NFSV4"]}'
   changed_when: true
-  when: not nfs_config.v4
+  when:
+    - nfs_config.protocols is defined
+    - "'NFSV4' not in nfs_config.protocols"

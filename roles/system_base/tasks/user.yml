@@ -1,27 +1,80 @@
 ---
-- name: User | Lookup admin user details
+- name: Admin User | Look up builtin_administrators group
+  ansible.builtin.command: >
+    midclt call group.query '[["group", "=", "builtin_administrators"]]'
+  register: builtin_admin_group_raw
+  changed_when: false
+
+- name: Admin User | Set builtin_administrators group ID fact
+  ansible.builtin.set_fact:
+    builtin_admin_group_id: "{{ (builtin_admin_group_raw.stdout | from_json)[0].id | int }}"
+
+- name: Admin User | Check if {{ truenas_admin_user }} exists
+  ansible.builtin.command: >
+    midclt call user.query '[["username", "=", "{{ truenas_admin_user }}"]]'
+  register: admin_user_check_raw
+  changed_when: false
+
+- name: Admin User | Create {{ truenas_admin_user }} with admin privileges
+  ansible.builtin.command: >
+    midclt call user.create
+    '{{ {
+      "username": truenas_admin_user,
+      "full_name": "System Operator",
+      "group_create": true,
+      "home": "/mnt/" ~ pool_name ~ "/personal",
+      "home_create": true,
+      "password": admin_password,
+      "smb": true,
+      "locked": false,
+      "shell": "/usr/bin/bash",
+      "groups": [builtin_admin_group_id]
+    } | to_json }}'
+  no_log: true
+  when: (admin_user_check_raw.stdout | from_json) | length == 0
+
+- name: Admin User | Lookup {{ truenas_admin_user }} current state
   ansible.builtin.command: >
     midclt call user.query '[["username", "=", "{{ truenas_admin_user }}"]]'
   register: admin_user_raw
   changed_when: false
 
-- name: User | Set admin user fact
+- name: Admin User | Set admin user fact
   ansible.builtin.set_fact:
     admin_user_list: "{{ admin_user_raw.stdout | from_json }}"
 
-- name: User | Update admin alert email
+- name: Admin User | Update alert email
   ansible.builtin.command: >
-    midclt call user.update '[{{ admin_user_list[0].id }}, {"email": "{{ alert_email }}"}]'
+    midclt call user.update '{{ admin_user_list[0].id }}' '{"email": "{{ alert_email }}"}'
   changed_when: true
   when:
     - admin_user_list | length > 0
-    - admin_user_list[0].email != alert_email
+    - admin_user_list[0].email | default('') != alert_email
 
-- name: User | Install admin SSH public key
+- name: Admin User | Install SSH public key
   ansible.builtin.command: >
     midclt call user.update
-    '[{{ admin_user_list[0].id }}, {{ {"sshpubkey": admin_public_key} | to_json }}]'
+    '{{ admin_user_list[0].id }}'
+    '{{ {"sshpubkey": admin_public_key | trim} | to_json }}'
   no_log: true
   when:
     - admin_user_list | length > 0
     - (admin_user_list[0].sshpubkey | default('') | trim) != (admin_public_key | trim)
+
+- name: Admin User | Sync password and SMB hash from SSM
+  ansible.builtin.command: >
+    midclt call user.update
+    '{{ admin_user_list[0].id }}'
+    '{{ {"password": admin_password, "smb": true} | to_json }}'
+  no_log: true
+  changed_when: true
+  when: admin_user_list | length > 0
+
+- name: Admin User | Ensure builtin_administrators group membership
+  ansible.builtin.command: >
+    midclt call user.update
+    '{{ admin_user_list[0].id }}'
+    '{{ {"groups": ((admin_user_list[0].groups | default([])) + [builtin_admin_group_id]) | unique | list} | to_json }}'
+  when:
+    - admin_user_list | length > 0
+    - builtin_admin_group_id not in (admin_user_list[0].groups | default([]))

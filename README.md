@@ -15,6 +15,9 @@ bootstrap.yml  →  Phase 1: SSH (truenas_admin builtin, password, port 22)
                     - Validates connectivity and midclt access
 
 site.yml       →  SSH + midclt for all configuration tasks
+                    Role order encodes dependency graph:
+                    storage_datasets → system_base → identity_management
+                    → storage_provisioning → system_hardening
 maint.yml      →  SSH + midclt for TrueNAS SCALE updates
 ```
 
@@ -105,7 +108,7 @@ After bootstrap, run `site.yml` to complete full configuration. The `system_hard
 # Full provisioning run
 ansible-playbook playbooks/site.yml
 
-# Run a single role (tags: system_base | identity_management | storage_provisioning | system_hardening)
+# Run a single role (tags: storage_datasets | system_base | identity_management | storage_provisioning | system_hardening)
 ansible-playbook playbooks/site.yml --tags storage_provisioning
 
 # Check for available updates (does not apply)
@@ -133,8 +136,8 @@ Datasets are defined in `inventory/group_vars/all.yml` under the `datasets` key.
 | `nfs_map` | no | `mapall` or `maproot` — NFS only |
 
 **`acltype` guidance:**
-- Use `POSIX` for SMB shares accessed by macOS, iOS, or Linux clients. POSIX ACLs are universally compatible and fix the iOS empty-directory bug caused by NFSv4 ACL evaluation failures in the Apple SMB client.
-- Use `NFSV4` (default) only when Windows ACL inheritance is strictly required.
+- Use `NFSV4` (default for `share_type: smb`) for all SMB shares. NFSv4 ACLs with `INHERIT` flags are required for correct Windows ACL semantics and for macOS/iOS SMB clients to list directory contents. Without INHERIT ACEs, iOS mounts the share successfully but shows it as empty.
+- Use `POSIX` for NFS-only shares. POSIX ACLs map cleanly to Unix permission bits and are sufficient for NFS clients that do not require rich ACL inheritance.
 
 **UID/GID alignment:** Service user UIDs and GIDs must match what NFS clients expect. For example, `pbs_user` (uid 2000) / `proxmox_group` (gid 2000) is mirrored in the infra-playbook `pbs` role so the PBS VM can write to its NFS share correctly. Coordinate any changes across both playbooks.
 
@@ -165,9 +168,12 @@ Datasets are defined in `inventory/group_vars/all.yml` under the `datasets` key.
         └── cleanup_ssh_key.yml     # Remove temp key after run
 
 roles/
-├── system_base/                    # Hostname, domain, SMTP, GUI settings, email alerts, LDAP
+├── storage_datasets/               # ZFS dataset provisioning — runs first, no user deps
 │   └── tasks/
-│       ├── user.yml                # Admin user email and SSH key
+│       └── datasets.yml            # Encrypted ZFS datasets with quota and acltype
+├── system_base/                    # Admin user, hostname, SMTP, GUI settings, email alerts, LDAP
+│   └── tasks/
+│       ├── user.yml                # Create sysop admin user, sync password/SSH key every run
 │       ├── network.yml             # Hostname and domain
 │       ├── mail.yml                # AWS SES SMTP
 │       ├── gui.yml                 # HTTPS redirect, usage collection
@@ -177,11 +183,9 @@ roles/
 │   └── tasks/
 │       ├── groups.yml
 │       └── users.yml
-├── storage_provisioning/           # Pool, datasets, shares, services, backups, scrub
+├── storage_provisioning/           # ACLs, shares, services, backups, scrub — runs after users exist
 │   └── tasks/
-│       ├── pool.yml                # RAID 10 pool creation
-│       ├── datasets.yml            # Encrypted ZFS datasets with quota
-│       ├── acl.yml                 # Ownership and ACL (POSIX or NFSv4)
+│       ├── acl.yml                 # Ownership and ACL (POSIX or NFSv4 with INHERIT flags)
 │       ├── shares.yml              # SMB (guest disabled) and NFS shares
 │       ├── services.yml            # cifs/nfs service state; NFSv4 enforced
 │       ├── snapshots.yml           # Periodic snapshot task

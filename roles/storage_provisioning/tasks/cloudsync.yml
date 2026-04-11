@@ -28,14 +28,15 @@
 - name: CloudSync | Rotate S3 credential if access key has changed
   ansible.builtin.command: >
     midclt call cloudsync.credentials.update
-    '[{{ s3_cred_list[0].id }}, {{ {
+    '{{ s3_cred_list[0].id }}'
+    '{{ {
       "provider": {
         "type": "S3",
         "access_key_id": aws_access_key,
         "secret_access_key": aws_secret_key,
         "endpoint": "https://" ~ s3_endpoint
       }
-    } | to_json }}]'
+    } | to_json }}'
   no_log: true
   changed_when: true
   when:
@@ -109,7 +110,8 @@
     existing_task: "{{ sync_task_list[0] }}"
   ansible.builtin.command: >
     midclt call cloudsync.update
-    '[{{ existing_task.id }}, {{ {
+    '{{ existing_task.id }}'
+    '{{ {
       "credentials": dynamic_cred_id,
       "attributes": {
         "bucket": s3_bucket_name,
@@ -124,7 +126,7 @@
         "month": "*",
         "dow": "*"
       }
-    } | to_json }}]'
+    } | to_json }}'
   no_log: true
   changed_when: true
   when:

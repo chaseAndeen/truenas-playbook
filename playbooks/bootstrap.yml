@@ -106,13 +106,14 @@
     - name: Bootstrap | Update ansible user SSH key and sudo rights
       ansible.builtin.command: >
         midclt call user.update
-        '[{{ bootstrap_ansible_user_list[0].id }}, {{ {
+        '{{ bootstrap_ansible_user_list[0].id }}'
+        '{{ {
           "smb": false,
           "sudo_commands": ["ALL"],
           "sudo_commands_nopasswd": ["ALL"],
           "sshpubkey": ansible_public_key,
           "password_disabled": true
-        } | to_json }}]'
+        } | to_json }}'
       no_log: true
       when:
         - bootstrap_ansible_user_list | length > 0
@@ -131,7 +132,7 @@
 
     - name: Bootstrap | Enable SSH service at boot
       ansible.builtin.command: >
-        midclt call service.update '[{{ ssh_service.id }}, {"enable": true}]'
+        midclt call service.update '{{ ssh_service.id }}' '{"enable": true}'
       when: not ssh_service.enable
 
     - name: Bootstrap | Fetch current SSH configuration

@@ -1,7 +1,4 @@
 ---
-- name: Storage | Datasets
-  ansible.builtin.import_tasks: datasets.yml
-
 - name: Storage | ACLs
   ansible.builtin.import_tasks: acl.yml
   tags: [acl]

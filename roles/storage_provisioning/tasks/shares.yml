@@ -22,30 +22,10 @@
     '{{ {
       "path": "/mnt/" ~ pool_name ~ "/" ~ item.name,
       "name": item.name,
-      "purpose": "DEFAULT_SHARE",
-      "enabled": true,
-      "guestok": false,
-      "hostsallow": trusted_networks
+      "enabled": true
     } | to_json }}'
   loop: "{{ datasets | selectattr('share_type', 'equalto', 'smb') | list }}"
   when: ("/mnt/" ~ pool_name ~ "/" ~ item.name) not in (smb_list | map(attribute='path') | list)
-  loop_control:
-    label: "{{ item.name }}"
-
-- name: Share | Update SMB share security and access settings
-  vars:
-    existing_share: "{{ smb_list | selectattr('path', 'equalto', '/mnt/' ~ pool_name ~ '/' ~ item.name) | first | default({}) }}"
-  ansible.builtin.command: >
-    midclt call sharing.smb.update
-    '[{{ existing_share.id }}, {{ {
-      "guestok": false,
-      "hostsallow": trusted_networks
-    } | to_json }}]'
-  loop: "{{ datasets | selectattr('share_type', 'equalto', 'smb') | list }}"
-  when:
-    - existing_share.id is defined
-    - (existing_share.hostsallow | default([]) | sort) != (trusted_networks | sort) or
-      (existing_share.guestok | default(true))
   loop_control:
     label: "{{ item.name }}"
 
@@ -75,7 +55,8 @@
     existing_share: "{{ nfs_list | selectattr('path', 'equalto', '/mnt/' ~ pool_name ~ '/' ~ item.name) | first | default({}) }}"
   ansible.builtin.command: >
     midclt call sharing.nfs.update
-    '[{{ existing_share.id }}, {{ {"networks": server_networks} | to_json }}]'
+    '{{ existing_share.id }}'
+    '{{ {"networks": server_networks} | to_json }}'
   loop: "{{ datasets | selectattr('share_type', 'equalto', 'nfs') | list }}"
   when:
     - existing_share.id is defined
@@ -89,12 +70,13 @@
     desired_mapall_user: "{{ item.owner if item.nfs_map | default('') == 'mapall' else '' }}"
   ansible.builtin.command: >
     midclt call sharing.nfs.update
-    '[{{ existing_share.id }}, {{ {
+    '{{ existing_share.id }}'
+    '{{ {
       "mapall_user": item.owner if item.nfs_map | default("") == "mapall" else "",
       "mapall_group": item.group if item.nfs_map | default("") == "mapall" else "",
       "maproot_user": "root" if item.nfs_map | default("") == "maproot" else "",
       "maproot_group": "wheel" if item.nfs_map | default("") == "maproot" else ""
-    } | to_json }}]'
+    } | to_json }}'
   loop: "{{ datasets | selectattr('share_type', 'equalto', 'nfs') | list }}"
   when:
     - existing_share.id is defined

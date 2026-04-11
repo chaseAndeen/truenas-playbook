@@ -11,9 +11,10 @@ aws_region: "us-east-1"
 
 # --- Core System ---
 truenas_admin_password: "{{ lookup('amazon.aws.ssm_parameter', '/infra/truenas/admin_password',     profile=aws_profile, region=aws_region) }}"
+admin_password:         "{{ lookup('amazon.aws.ssm_parameter', '/infra/common/admin_password',      profile=aws_profile, region=aws_region) }}"
 admin_public_key:       "{{ lookup('amazon.aws.ssm_parameter', '/infra/common/public_key',          profile=aws_profile, region=aws_region) }}"
 ansible_public_key:     "{{ lookup('amazon.aws.ssm_parameter', '/infra/common/ansible_public_key',  profile=aws_profile, region=aws_region) }}"
-zfs_encryption_key: "{{ lookup('amazon.aws.ssm_parameter', '/storage/truenas/zfs_key',                        profile=aws_profile, region=aws_region) }}"
+zfs_encryption_key:     "{{ lookup('amazon.aws.ssm_parameter', '/storage/truenas/zfs_key',          profile=aws_profile, region=aws_region) }}"
 
 # --- S3 & Cloud Sync ---
 aws_access_key:     "{{ lookup('amazon.aws.ssm_parameter', '/storage/truenas/backups/s3_access_key',          profile=aws_profile, region=aws_region) }}"
@@ -94,8 +95,9 @@ vdev_mirror_2: ["sdc", "sdd"]
 #
 # share_type: smb | nfs
 # acltype:    POSIX | NFSV4  (optional — defaults to NFSV4 for smb, POSIX for nfs)
-#             Use POSIX for SMB shares accessed by macOS/iOS/Linux clients.
-#             Use NFSV4 for SMB shares requiring full Windows ACL inheritance.
+#             NFSV4 is required for SMB shares — enables Windows ACL inheritance
+#             and correct permission display on macOS/iOS/Linux SMB clients.
+#             POSIX is suitable for NFS-only shares.
 # nfs_map:    mapall | maproot  (nfs only)
 # ==========================================================
 datasets:
@@ -105,7 +107,7 @@ datasets:
     owner: "{{ truenas_admin_user }}"
     group: "{{ truenas_admin_user }}"
     share_type: "smb"
-    acltype: "POSIX"
+    acltype: "NFSV4"
   - name: "dataset-01"
     recordsize: "128K"
     quota: "1TB"

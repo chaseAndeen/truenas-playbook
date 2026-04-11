@@ -1,36 +1,42 @@
 ---
-- name: ACL | Lookup UIDs for dataset owners
-  ansible.builtin.command: >
-    midclt call user.get_user_obj '{"username": "{{ item.owner }}"}'
-  loop: "{{ datasets }}"
-  register: user_lookup_raw
+- name: ACL | Lookup all local users
+  ansible.builtin.command: midclt call user.query '[]'
+  register: all_users_raw
   changed_when: false
-  no_log: false
-  loop_control:
-    label: "{{ item.owner }}"
 
-- name: ACL | Build owner identity map
-  ansible.builtin.set_fact:
-    id_map: >-
-      {{
-        id_map | default({}) | combine({
-          item.item.name: {
-            'uid': (item.stdout | from_json).pw_uid,
-            'gid': (item.stdout | from_json).pw_gid
-          }
-        })
-      }}
-  loop: "{{ user_lookup_raw.results }}"
-  loop_control:
-    label: "{{ item.item.name }}"
+- name: ACL | Lookup all local groups
+  ansible.builtin.command: midclt call group.query '[]'
+  register: all_groups_raw
+  changed_when: false
 
 - name: ACL | Get current ACL state for each dataset
   ansible.builtin.command: >
     midclt call filesystem.getacl
-    '{"path": "/mnt/{{ pool_name }}/{{ item.name }}"}'
+    '"/mnt/{{ pool_name }}/{{ item.name }}"'
   loop: "{{ datasets }}"
   register: current_acl_raw
   changed_when: false
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: ACL | Build owner identity map
+  vars:
+    all_users: "{{ all_users_raw.stdout | from_json }}"
+    all_groups: "{{ all_groups_raw.stdout | from_json }}"
+    current_acl: "{{ (current_acl_raw.results | selectattr('item.name', 'equalto', item.name) | first).stdout | from_json }}"
+    matched_user: "{{ all_users | selectattr('username', 'equalto', item.owner) | list }}"
+    matched_group: "{{ all_groups | selectattr('group', 'equalto', item.group) | list }}"
+  ansible.builtin.set_fact:
+    id_map: >-
+      {{
+        id_map | default({}) | combine({
+          item.name: {
+            'uid': (matched_user | first).uid if matched_user | length > 0 else current_acl.uid,
+            'gid': (matched_group | first).gid if matched_group | length > 0 else current_acl.gid
+          }
+        })
+      }}
+  loop: "{{ datasets }}"
   loop_control:
     label: "{{ item.name }}"
 
@@ -39,13 +45,13 @@
     current_acl: "{{ (current_acl_raw.results | selectattr('item.name', 'equalto', item.name) | first).stdout | from_json }}"
     target_uid: "{{ id_map[item.name].uid }}"
     target_gid: "{{ id_map[item.name].gid }}"
-    resolved_acltype: "{{ item.acltype | default('NFSV4' if item.share_type == 'smb' else 'POSIX') }}"
   ansible.builtin.command: >
     midclt call filesystem.setacl
     '{{ {
       "path": "/mnt/" ~ pool_name ~ "/" ~ item.name,
       "uid": target_uid | int,
       "gid": target_gid | int,
+      "acltype": "NFS4",
       "dacl": [
         {
           "tag": "owner@",
@@ -68,7 +74,8 @@
     - item.acltype | default('NFSV4' if item.share_type == 'smb' else 'POSIX') == 'NFSV4'
     - current_acl.uid != target_uid | int or
       current_acl.gid != target_gid | int or
-      current_acl.acltype != 'NFS4'
+      current_acl.acltype != 'NFS4' or
+      (current_acl.trivial | default(true))
   loop_control:
     label: "{{ item.name }}"
 
