@@ -2,42 +2,44 @@
 - name: Service | Fetch current service states
   ansible.builtin.command: >
     midclt call service.query '[["service", "in", ["cifs", "nfs"]]]'
-  register: services_raw
+  register: storage_provisioning_services_raw
   changed_when: false
 
 - name: Service | Set services fact
   ansible.builtin.set_fact:
-    storage_services: "{{ services_raw.stdout | from_json }}"
+    storage_provisioning_storage_services: "{{ storage_provisioning_services_raw.stdout | from_json }}"
 
 - name: Service | Ensure services are enabled at boot
   ansible.builtin.command: >
     midclt call service.update '{{ item.id }}' '{"enable": true}'
-  loop: "{{ storage_services }}"
+  loop: "{{ storage_provisioning_storage_services }}"
   when: not item.enable
+  changed_when: not item.enable
   loop_control:
     label: "{{ item.service }}"
 
 - name: Service | Start services if not running
   ansible.builtin.command: >
     midclt call service.start '"{{ item.service }}"'
-  loop: "{{ storage_services }}"
+  loop: "{{ storage_provisioning_storage_services }}"
   when: item.state != 'RUNNING'
+  changed_when: item.state != 'RUNNING'
   loop_control:
     label: "{{ item.service }}"
 
 - name: Service | Fetch current NFS configuration
   ansible.builtin.command: midclt call nfs.config
-  register: nfs_config_raw
+  register: storage_provisioning_nfs_config_raw
   changed_when: false
 
 - name: Service | Set NFS config fact
   ansible.builtin.set_fact:
-    nfs_config: "{{ nfs_config_raw.stdout | from_json }}"
+    storage_provisioning_nfs_config: "{{ storage_provisioning_nfs_config_raw.stdout | from_json }}"
 
 - name: Service | Enable NFSv4
   ansible.builtin.command: >
     midclt call nfs.update '{"protocols": ["NFSV3", "NFSV4"]}'
   changed_when: true
   when:
-    - nfs_config.protocols is defined
-    - "'NFSV4' not in nfs_config.protocols"
+    - storage_provisioning_nfs_config.protocols is defined
+    - "'NFSV4' not in storage_provisioning_nfs_config.protocols"

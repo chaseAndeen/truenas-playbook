@@ -1,9 +1,9 @@
 ---
 - name: Dataset | Build quota bytes map
   ansible.builtin.set_fact:
-    quota_bytes_map: >-
+    storage_datasets_quota_bytes_map: >-
       {{
-        quota_bytes_map | default({}) | combine({
+        storage_datasets_quota_bytes_map | default({}) | combine({
           item.name: (
             item.quota | regex_replace('[^0-9]', '') | int *
             (1099511627776 if 'T' in item.quota else 1073741824)
@@ -16,12 +16,12 @@
 
 - name: Dataset | Fetch existing datasets
   ansible.builtin.command: midclt call pool.dataset.query
-  register: existing_datasets_raw
+  register: storage_datasets_existing_datasets_raw
   changed_when: false
 
 - name: Dataset | Set existing datasets fact
   ansible.builtin.set_fact:
-    existing_datasets: "{{ existing_datasets_raw.stdout | from_json }}"
+    storage_datasets_existing_datasets: "{{ storage_datasets_existing_datasets_raw.stdout | from_json }}"
 
 - name: Dataset | Create missing datasets
   ansible.builtin.command: >
@@ -39,30 +39,32 @@
         "generate_key": false
       },
       "inherit_encryption": false,
-      "refquota": quota_bytes_map[item.name]
+      "refquota": storage_datasets_quota_bytes_map[item.name]
     } | to_json }}'
   loop: "{{ datasets }}"
-  when: (pool_name ~ "/" ~ item.name) not in (existing_datasets | map(attribute='id') | list)
+  when: (pool_name ~ "/" ~ item.name) not in (storage_datasets_existing_datasets | map(attribute='id') | list)
+  changed_when: true
   no_log: true
   loop_control:
     label: "{{ item.name }}"
 
 - name: Dataset | Update existing datasets
   vars:
-    current_ds: "{{ existing_datasets | selectattr('id', 'equalto', pool_name ~ '/' ~ item.name) | first | default({}) }}"
+    current_ds: "{{ storage_datasets_existing_datasets | selectattr('id', 'equalto', pool_name ~ '/' ~ item.name) | first | default({}) }}"
   ansible.builtin.command: >
     midclt call pool.dataset.update
     '"{{ pool_name }}/{{ item.name }}"'
     '{{ {
       "atime": "OFF",
       "recordsize": item.recordsize,
-      "refquota": quota_bytes_map[item.name]
+      "refquota": storage_datasets_quota_bytes_map[item.name]
     } | to_json }}'
   loop: "{{ datasets }}"
   when:
-    - (pool_name ~ "/" ~ item.name) in (existing_datasets | map(attribute='id') | list)
+    - (pool_name ~ "/" ~ item.name) in (storage_datasets_existing_datasets | map(attribute='id') | list)
     - current_ds | length > 0
-    - (current_ds.refquota.rawvalue | int != quota_bytes_map[item.name] | int) or
+    - (current_ds.refquota.rawvalue | int != storage_datasets_quota_bytes_map[item.name] | int) or
       (current_ds.recordsize.value != item.recordsize)
+  changed_when: true
   loop_control:
     label: "{{ item.name }}"

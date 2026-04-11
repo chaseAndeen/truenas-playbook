@@ -2,19 +2,19 @@
 - name: User | Lookup truenas_admin builtin account
   ansible.builtin.command: >
     midclt call user.query '[["username", "=", "truenas_admin"]]'
-  register: truenas_admin_raw
+  register: system_hardening_truenas_admin_raw
   changed_when: false
 
 - name: User | Set truenas_admin fact
   ansible.builtin.set_fact:
-    truenas_admin_list: "{{ truenas_admin_raw.stdout | from_json }}"
+    system_hardening_truenas_admin_list: "{{ system_hardening_truenas_admin_raw.stdout | from_json }}"
 
 - name: User | Lock truenas_admin account
   ansible.builtin.command: >
     midclt call user.update
-    '{{ truenas_admin_list[0].id }}'
+    '{{ system_hardening_truenas_admin_list[0].id }}'
     '{"locked": true}'
   changed_when: true
   when:
-    - truenas_admin_list | length > 0
-    - not truenas_admin_list[0].locked
+    - system_hardening_truenas_admin_list | length > 0
+    - not system_hardening_truenas_admin_list[0].locked

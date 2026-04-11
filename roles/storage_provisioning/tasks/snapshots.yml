@@ -1,7 +1,7 @@
 ---
 - name: Snapshot | Fetch existing snapshot tasks
   ansible.builtin.command: midclt call pool.snapshottask.query
-  register: snapshots_raw
+  register: storage_provisioning_snapshots_raw
   changed_when: false
 
 - name: Snapshot | Create periodic snapshot task
@@ -23,6 +23,7 @@
       "enabled": true
     } | to_json }}'
   when: >
-    (snapshots_raw.stdout | from_json)
+    (storage_provisioning_snapshots_raw.stdout | from_json)
     | selectattr('dataset', 'equalto', pool_name)
     | list | length == 0
+  changed_when: true

@@ -102,6 +102,7 @@
         } | to_json }}'
       no_log: true
       when: bootstrap_ansible_user_list | length == 0
+      changed_when: bootstrap_ansible_user_list | length == 0
 
     - name: Bootstrap | Update ansible user SSH key and sudo rights
       ansible.builtin.command: >
@@ -118,6 +119,9 @@
       when:
         - bootstrap_ansible_user_list | length > 0
         - (bootstrap_ansible_user_list[0].sshpubkey | default('') | trim) != (ansible_public_key | trim)
+      changed_when: >
+        bootstrap_ansible_user_list | length > 0 and
+        (bootstrap_ansible_user_list[0].sshpubkey | default('') | trim) != (ansible_public_key | trim)
 
     # ── SSH hardening ────────────────────────────────────────
     - name: Bootstrap | Fetch SSH service state
@@ -134,6 +138,7 @@
       ansible.builtin.command: >
         midclt call service.update '{{ ssh_service.id }}' '{"enable": true}'
       when: not ssh_service.enable
+      changed_when: not ssh_service.enable
 
     - name: Bootstrap | Fetch current SSH configuration
       ansible.builtin.command: midclt call ssh.config
@@ -152,7 +157,9 @@
           "passwordauth": false
         } | to_json }}'
       register: ssh_update_result
-      changed_when: true
+      changed_when: >
+        current_ssh_config.tcpport | int != truenas_ssh_port | int or
+        current_ssh_config.passwordauth
       when: >
         current_ssh_config.tcpport | int != truenas_ssh_port | int or
         current_ssh_config.passwordauth
@@ -162,12 +169,14 @@
       async: 5
       poll: 0
       when: ssh_update_result is changed
+      changed_when: ssh_update_result is changed
 
     - name: Bootstrap | Start SSH if not running and config was unchanged
       ansible.builtin.command: midclt call service.start '"ssh"'
       when:
         - ssh_update_result is not changed
         - ssh_service.state != 'RUNNING'
+      changed_when: ssh_service.state != 'RUNNING'
 
     - name: Bootstrap | Wait for SSH on port {{ truenas_ssh_port }}
       ansible.builtin.wait_for:

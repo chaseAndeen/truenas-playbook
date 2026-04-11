@@ -10,15 +10,15 @@
 
 - name: LDAP | Fetch current directory services configuration
   ansible.builtin.command: midclt call directoryservices.config
-  register: _ds_config_raw
+  register: system_base_ds_config_raw
   changed_when: false
 
 - name: LDAP | Set directory services config fact
   ansible.builtin.set_fact:
-    _ds_config: "{{ _ds_config_raw.stdout | from_json }}"
-    _ldap_server_url: "ldaps://{{ svc_ldap_host }}:636"
-    _ldap_basedn: "{{ truenas_ldap_basedn }}"
-    _ldap_binddn: "{{ truenas_ldap_binddn }}"
+    system_base_ds_config: "{{ system_base_ds_config_raw.stdout | from_json }}"
+    system_base_ldap_server_url: "ldaps://{{ svc_ldap_host }}:636"
+    system_base_ldap_basedn: "{{ truenas_ldap_basedn }}"
+    system_base_ldap_binddn: "{{ truenas_ldap_binddn }}"
 
 - name: LDAP | Configure Authentik LDAP directory service
   ansible.builtin.command: >
@@ -27,21 +27,21 @@
       "service_type": "LDAP",
       "credential": {
         "credential_type": "LDAP_PLAIN",
-        "binddn": _ldap_binddn,
+        "binddn": system_base_ldap_binddn,
         "bindpw": ldap_bind_password
       },
       "enable": true,
       "enable_account_cache": true,
       "configuration": {
         "service_type": "LDAP",
-        "server_urls": [_ldap_server_url],
-        "basedn": _ldap_basedn,
+        "server_urls": [system_base_ldap_server_url],
+        "basedn": system_base_ldap_basedn,
         "starttls": false,
         "validate_certificates": false,
         "schema": "RFC2307BIS",
         "search_bases": {
-          "base_user": "ou=users," ~ _ldap_basedn,
-          "base_group": "ou=groups," ~ _ldap_basedn,
+          "base_user": "ou=users," ~ system_base_ldap_basedn,
+          "base_group": "ou=groups," ~ system_base_ldap_basedn,
           "base_netgroup": none
         }
       }
@@ -49,7 +49,7 @@
   no_log: true
   changed_when: true
   when: >
-    not _ds_config.enable or
-    _ds_config.service_type | default('') != 'LDAP' or
-    ((_ds_config.configuration | default({})).server_urls | default([])) != [_ldap_server_url] or
-    (_ds_config.configuration | default({})).basedn | default('') != _ldap_basedn
+    not system_base_ds_config.enable or
+    system_base_ds_config.service_type | default('') != 'LDAP' or
+    ((system_base_ds_config.configuration | default({})).server_urls | default([])) != [system_base_ldap_server_url] or
+    (system_base_ds_config.configuration | default({})).basedn | default('') != system_base_ldap_basedn

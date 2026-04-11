@@ -1,31 +1,32 @@
 ---
 - name: Group | Fetch existing groups
   ansible.builtin.command: midclt call group.query
-  register: existing_groups_raw
+  register: identity_management_existing_groups_raw
   changed_when: false
 
 - name: Group | Set existing groups fact
   ansible.builtin.set_fact:
-    existing_groups: "{{ existing_groups_raw.stdout | from_json }}"
+    identity_management_existing_groups: "{{ identity_management_existing_groups_raw.stdout | from_json }}"
 
 - name: Group | Create missing service groups
   ansible.builtin.command: >
     midclt call group.create
     '{{ {"name": item.name, "gid": item.gid | int} | to_json }}'
   loop: "{{ service_groups }}"
-  when: item.name not in (existing_groups | map(attribute='group') | list)
+  when: item.name not in (identity_management_existing_groups | map(attribute='group') | list)
+  changed_when: true
   loop_control:
     label: "{{ item.name }}"
 
 - name: Group | Refresh groups after creation
   ansible.builtin.command: midclt call group.query
-  register: refreshed_groups_raw
+  register: identity_management_refreshed_groups_raw
   changed_when: false
 
 - name: Group | Build group name-to-id lookup
   ansible.builtin.set_fact:
-    group_lookup: >-
+    identity_management_group_lookup: >-
       {{
-        (refreshed_groups_raw.stdout | from_json)
+        (identity_management_refreshed_groups_raw.stdout | from_json)
         | items2dict(key_name='group', value_name='id')
       }}

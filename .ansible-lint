@@ -1,8 +1,11 @@
 ---
 # midclt is the TrueNAS middleware client — there is no Ansible module for it.
 # command-instead-of-module is suppressed project-wide as a result.
+# no-handler is suppressed because SSH restart tasks use async fire-and-forget
+# (connection drops mid-restart) and must run inline, not deferred as handlers.
 skip_list:
   - command-instead-of-module
+  - no-handler
 
 warn_list:
   - experimental
