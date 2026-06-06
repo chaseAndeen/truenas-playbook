@@ -39,7 +39,7 @@
     midclt call sharing.nfs.create
     '{{ {
       "path": "/mnt/" ~ pool_name ~ "/" ~ item.name,
-      "networks": server_networks,
+      "networks": item.allowed_networks,
       "mapall_user": item.owner if item.nfs_map | default("") == "mapall" else "",
       "mapall_group": item.group if item.nfs_map | default("") == "mapall" else "",
       "maproot_user": "root" if item.nfs_map | default("") == "maproot" else "",
@@ -58,11 +58,11 @@
   ansible.builtin.command: >
     midclt call sharing.nfs.update
     '{{ existing_share.id }}'
-    '{{ {"networks": server_networks} | to_json }}'
+    '{{ {"networks": item.allowed_networks} | to_json }}'
   loop: "{{ datasets | selectattr('share_type', 'equalto', 'nfs') | list }}"
   when:
     - existing_share.id is defined
-    - (existing_share.networks | default([]) | sort) != (server_networks | sort)
+    - (existing_share.networks | default([]) | sort) != (item.allowed_networks | sort)
   changed_when: true
   loop_control:
     label: "{{ item.name }}"
